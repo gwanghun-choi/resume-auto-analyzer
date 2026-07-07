@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume AI Analyzer</title>
+    <link rel="stylesheet" href="/static/style.css?v=20260612-51">
+</head>
+
+<body>
+    <header class="app-header">
+        <h1>Resume AI</h1>
+        <p class="subtitle">FastAPI 기반 이력서 분석/매칭 관리 시스템</p>
+        <!-- 현재 로그인 사용자 표시 + 로그아웃 (app.js 가 /api/auth/me 로 채움) -->
+        <div id="userBar" class="user-bar hidden">
+            <span class="user-name" id="userName"></span>
+            <span class="user-role" id="userRole"></span>
+            <button type="button" id="logoutBtn" class="btn-secondary logout-btn">로그아웃</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <!-- 왼쪽 사이드바: 부서 트리가 아니라 '업무 메뉴'만 표시 -->
+        <aside class="sidebar card">
+            <nav class="menu">
+                <!-- 메뉴 그룹: 제목을 누르면 펼침/닫힘 토글. data-view="todo" 는 미구현(안내 화면) -->
+
+                <!-- 대시보드 (data-roles: 메뉴 표시 권한. JS applyMenuPermissions 가 role 기준 숨김 처리) -->
+                <div class="menu-group collapsed" data-roles="ADMIN,MANAGER,VIEWER">
+                    <div class="menu-group-title"><span class="caret">▾</span> 대시보드</div>
+                    <ul class="menu-items">
+                        <li class="menu-item" data-view="todo" data-todo="dashboard" data-roles="ADMIN,MANAGER,VIEWER">홈</li>
+                    </ul>
+                </div>
+
+                <!-- 채용 관리 (그룹은 VIEWER 도 표시: 이력서 현황/추천 결과 관리가 VIEWER 허용) -->
+                <div class="menu-group collapsed" id="recruitGroup" data-roles="ADMIN,MANAGER,VIEWER">
+                    <div class="menu-group-title" id="recruitGroupTitle"><span class="caret">▾</span> 채용 관리</div>
+                    <ul class="menu-items">
+                        <li class="menu-item" data-view="jobPostings" data-roles="ADMIN,MANAGER,VIEWER">공고/JD 관리</li>
+                        <li class="menu-item" data-view="resume" data-roles="ADMIN,MANAGER">이력서 등록</li>
+                        <li class="menu-item" data-view="resumeStatus" data-roles="ADMIN,MANAGER,VIEWER">이력서 현황</li>
+                        <li class="menu-item" data-view="analysisJobs" data-roles="ADMIN,MANAGER">분석 작업 관리</li>
+                        <li class="menu-item" data-view="todo" data-todo="recommendations" data-roles="ADMIN,MANAGER,VIEWER">추천 결과 관리</li>
+                    </ul>
+                </div>
+
+                <!-- 인재풀 (ADMIN 전용) -->
+                <div class="menu-group collapsed" data-roles="ADMIN">
+                    <div class="menu-group-title"><span class="caret">▾</span> 인재풀</div>
+                    <ul class="menu-items">
+                        <li class="menu-item" data-view="todo" data-todo="talentpool_all">전체 인재풀</li>
+                        <li class="menu-item" data-view="todo" data-todo="talentpool_manual">수동 등록 인재</li>
+                        <li class="menu-item" data-view="todo" data-todo="talentpool_platform">플랫폼 연동 인재</li>
+                        <li class="menu-item" data-view="todo" data-todo="talentpool_dup">중복 후보자 관리</li>
+                        <li class="menu-item" data-view="todo" data-todo="talentpool_archive">아카이브</li>
+                    </ul>
+                </div>
+
+                <!-- 연동 관리 (ADMIN 전용) -->
+                <div class="menu-group collapsed" data-roles="ADMIN">
+                    <div class="menu-group-title"><span class="caret">▾</span> 연동 관리</div>
+                    <ul class="menu-items">
+                        <li class="menu-item" data-view="todo" data-todo="integration_platform">채용 플랫폼 연동</li>
+                        <li class="menu-item" data-view="todo" data-todo="integration_import">CSV/ZIP 가져오기</li>
+                        <li class="menu-item" data-view="todo" data-todo="integration_history">연동 이력</li>
+                    </ul>
+                </div>
+
+                <!-- 관리자 (ADMIN 전용) -->
+                <div class="menu-group collapsed" id="adminGroup" data-roles="ADMIN">
+                    <div class="menu-group-title"><span class="caret">▾</span> 관리자</div>
+                    <ul class="menu-items">
+                        <li class="menu-item" data-view="driveSync">Drive 설정/동기화</li>
+                        <li class="menu-item" data-view="adminUsers">사용자 관리</li>
+                        <li class="menu-item" data-view="todo" data-todo="admin_roles">권한 관리</li>
+                        <li class="menu-item" data-view="todo" data-todo="admin_audit">감사 로그</li>
+                        <li class="menu-item" data-view="todo" data-todo="admin_settings">시스템 설정</li>
+                        <li class="menu-item"
+                            data-external="https://drive.google.com/drive/u/3/folders/1glf9SoPIKPM7_2T7cKZm74terHv06O6E">
+                            Drive 바로가기 <span class="ext-icon">↗</span></li>
+                    </ul>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- 오른쪽 메인 컨텐츠 -->
+        <main class="content">
+            <!-- 메뉴를 고르기 전 안내 -->
+            <div id="menuEmpty" class="card">
+                <p>왼쪽 메뉴에서 작업을 선택하세요.</p>
+            </div>
+
+            <!-- ===== 공고/JD 관리 화면 (공고 중심) ===== -->
+            <section id="view-jobPostings" class="view hidden">
+                <div class="view-head-row">
+                    <h2>공고/JD 관리</h2>
+                    <button id="addPostingBtn" type="button">+ 공고 등록</button>
+                </div>
+                <p class="view-desc">외부 채용 플랫폼에 등록한 공고와 Resume AI JD를 관리합니다.</p>
+
+                <div class="card status-toolbar">
+                    <button id="postingTodayBtn" type="button" class="btn-small">오늘</button>
+                    <label for="postingDateFrom">등록일</label>
+                    <input type="date" id="postingDateFrom">
+                    <span>~</span>
+                    <input type="date" id="postingDateTo">
+                    <label for="postingPlatformFilter">플랫폼</label>
+                    <select id="postingPlatformFilter">
+                        <option value="">전체</option>
+                        <option value="SARAMIN">사람인</option>
+                        <option value="JOBKOREA">잡코리아</option>
+                        <option value="WANTED">원티드</option>
+                        <option value="ETC">기타</option>
+                    </select>
+                    <label for="postingStatusFilter">상태</label>
+                    <select id="postingStatusFilter">
+                        <option value="">전체</option>
+                        <option value="DRAFT">DRAFT</option>
+                        <option value="OPEN">OPEN</option>
+                        <option value="CLOSED">CLOSED</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                    </select>
+                    <label for="postingJdFilter">JD 등록</label>
+                    <select id="postingJdFilter">
+                        <option value="">전체</option>
+                        <option value="REGISTERED">JD 등록 완료</option>
+                        <option value="NOT_REGISTERED">JD 미등록</option>
+                    </select>
+                    <span class="toolbar-actions">
+                        <input type="text" id="postingKeyword" placeholder="공고명 검색">
+                        <button id="postingSearchBtn" type="button">검색</button>
+                        <button id="postingResetBtn" type="button" class="btn-secondary">초기화</button>
+                    </span>
+                </div>
+                <div id="postingError"></div>
+
+                <div class="card">
+                    <div class="list-head-row">
+                        <span id="postingTotal" class="status-list-meta">총 0건</span>
+                        <select id="postingSizeSelect" class="page-size-select" title="페이지당 표시 개수">
+                            <option value="20">20개씩 보기</option>
+                            <option value="30">30개씩 보기</option>
+                            <option value="50">50개씩 보기</option>
+                        </select>
+                    </div>
+                    <div class="table-scroll">
+                        <table id="postingTable" class="data-table data-table-roomy">
+                            <colgroup>
+                                <col style="width:32%"><col style="width:18%"><col style="width:9%">
+                                <col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:9%">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>공고명/JD명</th><th>부서/팀</th><th>플랫폼</th>
+                                    <th>상태</th><th>JD 상태</th><th>등록일</th><th>관리</th>
+                                </tr>
+                            </thead>
+                            <tbody id="postingTableBody">
+                                <tr><td colspan="7" class="empty-cell">불러오는 중...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="status-pagination">
+                        <button id="postingPrevBtn" type="button">이전</button>
+                        <span id="postingPageInfo" class="hint"></span>
+                        <button id="postingNextBtn" type="button">다음</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== JD 등록 화면 (legacy: 부서 중심 JD. 메뉴에서 제거됨, 호환 위해 DOM 유지) ===== -->
+            <section id="view-jd" class="view hidden">
+                <h2>JD 관리</h2>
+                <p class="view-desc">부서별 채용 포지션과 기술 요구사항을 등록합니다.</p>
+
+                <div class="split">
+                    <!-- 부서 트리 (재사용 컴포넌트) -->
+                    <div class="tree-panel card">
+                        <h3>부서 / 팀</h3>
+                        <div class="dept-tree-search">
+                            <input type="text" id="jdDeptSearchInput" placeholder="부서명 검색">
+                            <button type="button" id="jdDeptSearchBtn">검색</button>
+                        </div>
+                        <div id="jdDeptTree" class="dept-tree">불러오는 중...</div>
+                    </div>
+
+                    <!-- JD 수정 폼 -->
+                    <div class="form-panel">
+                        <div id="jdEmpty" class="card">
+                            <p>왼쪽에서 팀을 선택하세요.</p>
+                        </div>
+
+                        <div id="jdForm" class="hidden">
+                            <h3 id="jdSelectedDeptName" class="selected-dept"></h3>
+                            <section class="card">
+                                <div class="jd-card-head">
+                                    <h3>JD (직무기술서)</h3>
+                                    <button id="recommendJdBtn" type="button">추천JD</button>
+                                </div>
+                                <div class="form-group">
+                                    <label for="position_title">포지션명</label>
+                                    <input type="text" id="position_title" placeholder="예: Backend Engineer">
+                                </div>
+                                <div class="form-group">
+                                    <label for="job_description">JD 설명</label>
+                                    <textarea id="job_description" rows="4" placeholder="직무 내용을 입력하세요."></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="required_skills">필수 기술 (콤마 또는 줄바꿈 구분)</label>
+                                    <textarea id="required_skills" rows="3"
+                                        placeholder="Java, Spring Boot&#10;JPA"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="preferred_skills">우대 기술 (콤마 또는 줄바꿈 구분)</label>
+                                    <textarea id="preferred_skills" rows="3" placeholder="Redis, Kafka"></textarea>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="min_years">최소 경력 (년)</label>
+                                        <input type="number" id="min_years" value="0" min="0">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="manager_email">담당자 이메일</label>
+                                    <input type="text" id="manager_email" placeholder="manager@example.com">
+                                </div>
+                                <p id="jdVersion" class="hint"></p>
+                                <button id="saveJdBtn" type="button">JD 저장</button>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== 이력서 등록 화면 (공고 기준) ===== -->
+            <section id="view-resume" class="view hidden">
+                <h2>이력서 등록</h2>
+                <p class="view-desc">공고를 선택한 뒤 해당 공고의 Google Drive inbox 폴더에 이력서를 업로드합니다.
+                    JD가 등록된 공고에만 업로드할 수 있습니다.</p>
+
+                <div class="card status-toolbar">
+                    <button id="resumePostingTodayBtn" type="button" class="btn-small">오늘</button>
+                    <label for="resumePostingDateFrom">등록일</label>
+                    <input type="date" id="resumePostingDateFrom">
+                    <span>~</span>
+                    <input type="date" id="resumePostingDateTo">
+                    <label for="resumePostingPlatform">플랫폼</label>
+                    <select id="resumePostingPlatform">
+                        <option value="">전체</option>
+                        <option value="SARAMIN">사람인</option>
+                        <option value="JOBKOREA">잡코리아</option>
+                        <option value="WANTED">원티드</option>
+                        <option value="ETC">기타</option>
+                    </select>
+                    <label for="resumePostingStatus">상태</label>
+                    <select id="resumePostingStatus">
+                        <option value="">전체</option>
+                        <option value="DRAFT">DRAFT</option>
+                        <option value="OPEN">OPEN</option>
+                        <option value="CLOSED">CLOSED</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                    </select>
+                    <label for="resumePostingJd">JD 등록</label>
+                    <select id="resumePostingJd">
+                        <option value="">전체</option>
+                        <option value="REGISTERED">JD 등록 완료</option>
+                        <option value="NOT_REGISTERED">JD 미등록</option>
+                    </select>
+                    <span class="toolbar-actions">
+                        <input type="text" id="resumePostingKeyword" placeholder="공고명 검색">
+                        <button id="resumePostingSearchBtn" type="button">검색</button>
+                        <button id="resumePostingResetBtn" type="button" class="btn-secondary">초기화</button>
+                    </span>
+                </div>
+                <div id="resumePostingError"></div>
+
+                <div class="card">
+                    <div class="list-head-row">
+                        <span id="resumePostingTotal" class="status-list-meta">총 0건</span>
+                        <select id="resumePostingSizeSelect" class="page-size-select" title="페이지당 표시 개수">
+                            <option value="20">20개씩 보기</option>
+                            <option value="30">30개씩 보기</option>
+                            <option value="50">50개씩 보기</option>
+                        </select>
+                    </div>
+                    <div class="table-scroll">
+                        <table id="resumePostingTable" class="data-table">
+                            <colgroup>
+                                <col style="width:26%"><col style="width:16%"><col style="width:10%">
+                                <col style="width:10%"><col style="width:12%"><col style="width:14%"><col style="width:12%">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>공고명/JD명</th><th>부서/팀</th><th>플랫폼</th>
+                                    <th>상태</th><th>JD 상태</th><th>등록일</th><th>업로드</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resumePostingTableBody">
+                                <tr><td colspan="7" class="empty-cell">불러오는 중...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="status-pagination">
+                        <button id="resumePostingPrevBtn" type="button">이전</button>
+                        <span id="resumePostingPageInfo" class="hint"></span>
+                        <button id="resumePostingNextBtn" type="button">다음</button>
+                    </div>
+                </div>
+
+                <!-- 업로드 영역 (공고 선택 시 노출) -->
+                <section id="resumeUploadPanel" class="card hidden">
+                    <h3>이력서 업로드 — <span id="resumeUploadPostingName"></span></h3>
+                    <!-- 해당 공고의 기존 미처리(분석 대기) 이력서 요약 (총 건수 + 파일명 일부) -->
+                    <div id="resumeUploadPending" class="upload-pending-summary hidden"></div>
+                    <p class="hint">PDF, DOC, DOCX, HWP, HWPX, TXT, MD, RTF, CSV, JSON, ZIP 파일을 업로드할 수 있습니다.
+                        ZIP 파일은 압축 해제 후 내부 파일을 각각 개별 이력서로 처리합니다.</p>
+                    <div class="form-group">
+                        <label for="driveResumeFiles">파일 선택 (여러 개 가능)</label>
+                        <input type="file" id="driveResumeFiles"
+                            accept=".pdf,.doc,.docx,.hwp,.hwpx,.txt,.md,.rtf,.csv,.json,.zip" multiple>
+                    </div>
+                    <div class="btn-row">
+                        <button id="driveUploadBtn" type="button">Google Drive에 업로드</button>
+                        <button id="resumeUploadCancelBtn" type="button" class="btn-secondary">닫기</button>
+                    </div>
+                    <p id="driveUploadMsg" class="hint"></p>
+
+                    <section id="driveUploadResultSection" class="card hidden">
+                        <h3>업로드 결과</h3>
+                        <div id="driveUploadResult"></div>
+                    </section>
+                    <section id="driveUploadErrorSection" class="card result-error hidden">
+                        <h3>업로드 실패</h3>
+                        <div id="driveUploadError"></div>
+                    </section>
+                </section>
+            </section>
+
+            <!-- ===== 분석 작업 관리 화면 (공고 기준) ===== -->
+            <section id="view-analysisJobs" class="view hidden">
+                <h2>분석 작업 관리</h2>
+                <p class="view-desc">공고를 선택해 해당 공고의 분석 대기 이력서를 공고 JD 기준으로 분석합니다.</p>
+
+                <div class="card status-toolbar">
+                    <button id="analysisPostingTodayBtn" type="button" class="btn-small">오늘</button>
+                    <label for="analysisPostingDateFrom">등록일</label>
+                    <input type="date" id="analysisPostingDateFrom">
+                    <span>~</span>
+                    <input type="date" id="analysisPostingDateTo">
+                    <label for="analysisPostingPlatform">플랫폼</label>
+                    <select id="analysisPostingPlatform">
+                        <option value="">전체</option>
+                        <option value="SARAMIN">사람인</option>
+                        <option value="JOBKOREA">잡코리아</option>
+                        <option value="WANTED">원티드</option>
+                        <option value="ETC">기타</option>
+                    </select>
+                    <span class="toolbar-actions">
+                        <input type="text" id="analysisPostingKeyword" placeholder="공고명 검색">
+                        <button id="analysisPostingSearchBtn" type="button">검색</button>
+                        <button id="analysisPostingResetBtn" type="button" class="btn-secondary">초기화</button>
+                    </span>
+                </div>
+                <div id="analysisPostingError"></div>
+
+                <div class="split analysis-split">
+                    <!-- 1) 부서/팀 (검색조건) — 이력서 현황 트리 UI 재사용 -->
+                    <div class="card analysis-dept-panel">
+                        <div class="tree-panel-head">
+                            <strong>부서 / 팀</strong>
+                            <button id="analysisDeptAllBtn" type="button" class="btn-small btn-secondary">전체 부서</button>
+                        </div>
+                        <div class="dept-tree-search">
+                            <input type="text" id="analysisDeptSearchInput" placeholder="부서명 검색">
+                            <button type="button" id="analysisDeptSearchBtn">검색</button>
+                        </div>
+                        <div id="analysisDeptTree" class="dept-tree">불러오는 중...</div>
+                    </div>
+
+                    <!-- 2) 공고/JD 리스트 (compact 카드 리스트, 한 페이지 5개 고정) -->
+                    <div class="card analysis-posting-panel">
+                        <h3>공고 / JD</h3>
+                        <div class="list-head-row">
+                            <span id="analysisPostingTotal" class="status-list-meta">총 0건</span>
+                        </div>
+                        <div id="analysisPostingList" class="posting-card-list">
+                            <p class="hint">불러오는 중...</p>
+                        </div>
+                        <div class="status-pagination">
+                            <button id="analysisPostingPrevBtn" type="button">이전</button>
+                            <span id="analysisPostingPageInfo" class="hint"></span>
+                            <button id="analysisPostingNextBtn" type="button">다음</button>
+                        </div>
+                    </div>
+
+                    <!-- 3) 분석 대기 파일 + 분석 실행 -->
+                    <div class="form-panel">
+                        <!-- 분석 대기 파일 (선택 / 공고명 / 부서·팀 / 파일명 / 업로드 시간) -->
+                        <section class="card">
+                            <h3>분석 대기 파일</h3>
+                            <div class="list-head-row">
+                                <span id="pendingMeta" class="status-list-meta">왼쪽에서 공고를 선택하세요.</span>
+                                <select id="pendingSizeSelect" class="page-size-select" title="페이지당 표시 개수">
+                                    <option value="20">20개씩</option>
+                                    <option value="30">30개씩</option>
+                                    <option value="50">50개씩</option>
+                                </select>
+                            </div>
+                            <div class="table-scroll">
+                                <table id="pendingTable" class="data-table">
+                                    <colgroup>
+                                        <col style="width:44px">
+                                        <col style="width:28%">
+                                        <col style="width:20%">
+                                        <col style="width:32%">
+                                        <col style="width:20%">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th class="cell-check"><input type="checkbox" id="pendingSelectAll" title="전체 선택"></th>
+                                            <th>공고명</th>
+                                            <th>부서/팀</th>
+                                            <th>파일명</th>
+                                            <th>업로드 시간</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pendingTableBody">
+                                        <tr><td colspan="5" class="empty-cell">왼쪽에서 공고를 선택하세요.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="status-pagination">
+                                <button id="pendingPrevBtn" type="button">이전</button>
+                                <span id="pendingPageInfo" class="hint"></span>
+                                <button id="pendingNextBtn" type="button">다음</button>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <h3>분석 실행</h3>
+                            <p id="analyzeStatusMsg" class="hint">공고를 선택해주세요.</p>
+                            <div class="btn-row">
+                                <!-- 선택한 '공고'의 분석 대기 파일 전체 분석 -->
+                                <button id="analyzePostingBtn" type="button" disabled>선택 공고 분석 실행</button>
+                                <!-- 체크된 '항목'만 분석 -->
+                                <button id="analyzeSelectedBtn" type="button" class="btn-secondary" disabled>선택 항목 분석 실행</button>
+                                <!-- 전체 분석: ADMIN 전용 (JS 가 비ADMIN 에서 숨김, 백엔드에서도 403 재검증) -->
+                                <button id="analyzeAllBtn" type="button" class="btn-secondary hidden">전체 분석 실행</button>
+                            </div>
+                            <p id="analyzeNote" class="hint"></p>
+                        </section>
+
+                        <!-- 분석 결과 (성공: completed / 실패: failed) -->
+                        <section id="driveAnalysisResultSection" class="card hidden">
+                            <h3>분석 결과</h3>
+                            <div id="driveAnalysisResult"></div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== 공통 TODO/준비 중 안내 화면 (미구현 메뉴 공용) ===== -->
+            <section id="view-todo" class="view hidden">
+                <section class="card">
+                    <h2 id="todoTitle">준비 중</h2>
+                    <p id="todoDescription" class="view-desc">이 기능은 향후 구현 예정입니다.</p>
+                    <ul id="todoList"></ul>
+                </section>
+            </section>
+
+            <!-- ===== 이력서 현황 화면 (채용 관리) ===== -->
+            <section id="view-resumeStatus" class="view hidden">
+                <div class="view-head-row">
+                    <h2>이력서 현황</h2>
+                    <button id="statusExcelBtn" type="button" class="excel-button">Excel 다운로드</button>
+                </div>
+                <p class="view-desc">업로드된 이력서의 분석 상태와 추천 결과를 조회합니다.</p>
+
+                <!-- 상단 검색 toolbar (게시판형: 가로 컴팩트) -->
+                <div class="card status-toolbar">
+                    <button id="statusTodayBtn" type="button" class="btn-small">오늘</button>
+                    <label for="statusDateFrom">업로드일</label>
+                    <input type="date" id="statusDateFrom">
+                    <span>~</span>
+                    <input type="date" id="statusDateTo">
+                    <label for="statusAnalysisFilter">분석상태</label>
+                    <select id="statusAnalysisFilter">
+                        <option value="">전체</option>
+                        <option value="PENDING">분석 대기</option>
+                        <option value="PROCESSING">분석 중</option>
+                        <option value="COMPLETED">분석 완료</option>
+                        <option value="FAILED">분석 실패</option>
+                    </select>
+                    <label for="statusRecommendationFilter">추천결과</label>
+                    <select id="statusRecommendationFilter">
+                        <option value="">전체</option>
+                        <option value="우선 검토 추천">우선 검토 추천</option>
+                        <option value="추가 검토 필요">추가 검토 필요</option>
+                        <option value="낮은 적합도">낮은 적합도</option>
+                    </select>
+                    <span class="toolbar-actions">
+                        <input type="text" id="statusPostingKeyword" placeholder="공고명 검색">
+                        <input type="text" id="statusKeyword" placeholder="파일명 검색">
+                        <button id="statusSearchBtn" type="button">검색</button>
+                        <button id="statusResetBtn" type="button" class="btn-secondary">초기화</button>
+                    </span>
+                </div>
+                <div id="statusError"></div>
+
+                <!-- 본문: 좌측 부서 트리 + 우측 목록 테이블 -->
+                <div class="resume-status-content">
+                    <!-- 좌측: 부서 트리 필터 (재사용 컴포넌트). 선택 시 해당 부서로 필터, 미선택 시 전체 조회 -->
+                    <aside class="resume-status-tree-panel">
+                        <div class="tree-panel-head">
+                            <strong>부서 / 팀</strong>
+                            <button id="statusDeptAllBtn" type="button" class="btn-small btn-secondary">전체 부서</button>
+                        </div>
+                        <div class="dept-tree-search">
+                            <input type="text" id="statusDeptSearchInput" placeholder="부서명 검색">
+                            <button type="button" id="statusDeptSearchBtn">검색</button>
+                        </div>
+                        <div id="statusDeptTree" class="dept-tree">불러오는 중...</div>
+                    </aside>
+
+                    <!-- 우측: 이력서 목록 테이블 -->
+                    <section class="resume-status-table-panel">
+                        <div class="list-head-row">
+                            <span id="statusListMeta" class="status-list-meta"></span>
+                            <select id="statusSizeSelect" class="page-size-select" title="페이지당 표시 개수">
+                                <option value="20">20개씩 보기</option>
+                                <option value="30">30개씩 보기</option>
+                                <option value="50">50개씩 보기</option>
+                            </select>
+                        </div>
+                        <div class="table-scroll">
+                            <table id="statusTable" class="data-table">
+                                <!-- 폭 합 100% (table-layout:fixed) → 카드 폭을 넘지 않아 가로 스크롤 제거 -->
+                                <colgroup>
+                                    <col style="width:15%">
+                                    <col style="width:9%">
+                                    <col style="width:17%">
+                                    <col style="width:9%">
+                                    <col style="width:9%">
+                                    <col style="width:5%">
+                                    <col style="width:11%">
+                                    <col style="width:13%">
+                                    <col style="width:12%">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>공고명</th>
+                                        <th>부서</th>
+                                        <th>파일명</th>
+                                        <th>파일상태</th>
+                                        <th>분석상태</th>
+                                        <th>점수</th>
+                                        <th>추천</th>
+                                        <th>업로드일</th>
+                                        <th>분석일</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="statusTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="status-pagination">
+                            <button id="statusPrevBtn" type="button">이전</button>
+                            <span id="statusPageInfo" class="hint"></span>
+                            <button id="statusNextBtn" type="button">다음</button>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- 상세 보기 모달 (목록 row 클릭 시 표시) -->
+                <div id="statusModalOverlay" class="modal-overlay hidden">
+                    <div class="resume-detail-modal" role="dialog" aria-modal="true" aria-label="이력서 상세">
+                        <div class="resume-detail-modal-header">
+                            <div>
+                                <h3>이력서 상세</h3>
+                                <p id="statusModalFileName" class="hint"></p>
+                            </div>
+                            <button id="statusModalCloseBtn" type="button" class="modal-close"
+                                aria-label="닫기">×</button>
+                        </div>
+                        <div id="statusModalBody" class="resume-detail-modal-body"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== Google Drive 동기화 화면 (관리자용) ===== -->
+            <!-- TODO: 관리자 권한 적용 예정 (현재는 권한 제한 없이 누구나 접근 가능) -->
+            <section id="view-driveSync" class="view hidden">
+                <h2>Drive 설정/동기화</h2>
+                <p class="view-desc">Google Drive 부서 설정(dept_config.json)과 DB/폴더 매핑 상태를 동기화합니다. (폴더 구조만 동기화하며 이력서 파일은
+                    이동·삭제하지 않습니다.)</p>
+
+                <!-- 부서 설정 JSON 관리 (Drive config/dept_config.json) -->
+                <section class="card">
+                    <h3>부서 설정 JSON 관리</h3>
+                    <p class="hint">Google Drive의 config/dept_config.json 파일을 부서 데이터 원천으로 사용합니다. DBeaver export JSON 파일을
+                        업로드하면 서버가 자동으로 정규화하고, 정규화된 내용을 화면에서 확인/수정한 뒤 Drive에 저장할 수 있습니다.</p>
+
+                    <div class="btn-row">
+                        <button id="loadDeptConfigBtn" type="button">Drive 부서 JSON 불러오기</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="deptConfigFile">DBeaver export JSON 또는 배열 JSON 파일</label>
+                        <input type="file" id="deptConfigFile" accept=".json,application/json">
+                    </div>
+                    <div class="btn-row">
+                        <button id="uploadDeptConfigBtn" type="button">JSON 파일 업로드 및 정규화</button>
+                    </div>
+
+                    <!-- 메타 정보 (source / file_id / count / format / warnings / modified_time 등) -->
+                    <div id="deptConfigMeta" class="hint"></div>
+
+                    <div class="form-group">
+                        <label for="deptConfigText">부서 JSON (departments 배열 · 직접 수정 가능)</label>
+                        <textarea id="deptConfigText" class="mono" rows="16"
+                            placeholder="여기에 부서 JSON 이 표시됩니다."></textarea>
+                    </div>
+
+                    <div class="btn-row">
+                        <button id="validateDeptConfigBtn" type="button">부서 JSON 검증</button>
+                        <button id="saveDeptConfigBtn" type="button">Drive에 부서 JSON 저장</button>
+                    </div>
+
+                    <div id="deptConfigResult"></div>
+                    <div id="deptConfigError"></div>
+                </section>
+
+                <!-- 부서 DB 동기화 (resume_ai) : 화면 트리/JD/폴더 매핑의 기준 -->
+                <section class="card">
+                    <h3>부서 DB 동기화 (resume_ai)</h3>
+                    <p class="hint">부서 원천: Google Drive config/dept_config.json · 부서 조회 기준: PostgreSQL
+                        <strong>resume_ai.departments</strong> · Drive 폴더 매핑 기준: PostgreSQL
+                        <strong>resume_ai.dept_drive_folders</strong>
+                    </p>
+                    <div id="deptDbCounts" class="hint">DB count 불러오는 중...</div>
+                    <div class="btn-row">
+                        <button id="syncDeptDbBtn" type="button">Drive config → DB 부서 동기화</button>
+                    </div>
+                    <div id="deptDbResult"></div>
+                    <div id="deptDbError"></div>
+                </section>
+
+                <!-- 최근 동기화 상태 (화면 진입 시 status API 로 채움) -->
+                <section class="card">
+                    <h3>최근 동기화 상태</h3>
+                    <div id="driveSyncStatus">불러오는 중...</div>
+                </section>
+
+                <!-- 수동 동기화 실행 -->
+                <section class="card">
+                    <h3>수동 동기화</h3>
+                    <p class="hint"><strong>DB(resume_ai.departments)</strong> 의 부서를 기준으로 inbox / completed / failed 하위에
+                        부서별 폴더를 생성/재사용하고, 결과를 <strong>resume_ai.dept_drive_folders</strong> 에 저장합니다. (먼저 위에서 'Drive
+                        config → DB 부서 동기화'를 실행하세요. 여러 번 실행해도 안전합니다.)</p>
+                    <button id="syncDeptFoldersBtn" type="button">부서 폴더 동기화 실행 (DB 기준)</button>
+                </section>
+
+                <!-- 동기화 성공 결과 -->
+                <section id="driveSyncResultSection" class="card hidden">
+                    <h3>동기화 결과</h3>
+                    <div id="driveSyncResult"></div>
+                </section>
+
+                <!-- 동기화 실패 -->
+                <section id="driveSyncErrorSection" class="card result-error hidden">
+                    <h3>동기화 실패</h3>
+                    <div id="driveSyncError"></div>
+                </section>
+            </section>
+
+            <!-- ===== 사용자 관리 화면 (관리자 / ADMIN 전용) ===== -->
+            <section id="view-adminUsers" class="view hidden">
+                <div class="view-head-row">
+                    <h2>사용자 관리</h2>
+                    <button id="addUserBtn" type="button">+ 사용자 추가</button>
+                </div>
+                <p class="view-desc">시스템 로그인 사용자를 관리합니다. (ADMIN 전용)</p>
+                <div id="adminUsersError"></div>
+                <div class="card">
+                    <div class="table-scroll">
+                        <table id="adminUsersTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>상태</th>
+                                    <th>로그인ID</th>
+                                    <th>이름</th>
+                                    <th>이메일</th>
+                                    <th>역할</th>
+                                    <th>부서/팀</th>
+                                    <th>마지막 로그인</th>
+                                    <th>생성일</th>
+                                    <th>관리</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminUsersBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- ===== 사용자 추가/상세·수정 팝업 (관리자 > 사용자 관리) ===== -->
+    <div id="adminUserModalOverlay" class="modal-overlay hidden">
+        <div class="resume-detail-modal" role="dialog" aria-modal="true" aria-label="사용자 관리">
+            <div class="resume-detail-modal-header">
+                <div>
+                    <h3 id="adminUserModalTitle">사용자</h3>
+                    <p class="hint">login_id 와 비밀번호는 보안상 표시/수정하지 않습니다.</p>
+                </div>
+                <button id="adminUserModalCloseBtn" type="button" class="modal-close" aria-label="닫기">×</button>
+            </div>
+            <div class="resume-detail-modal-body">
+                <!-- 임시 비밀번호 등 1회성 안내 영역 -->
+                <div id="adminUserNotice" class="user-notice hidden"></div>
+
+                <div id="adminUserForm">
+                    <div class="form-group">
+                        <label for="userLoginId">로그인ID</label>
+                        <input type="text" id="userLoginId" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="userName2">이름</label>
+                        <input type="text" id="userName2">
+                    </div>
+                    <div class="form-group">
+                        <label for="userEmail">이메일</label>
+                        <input type="text" id="userEmail">
+                    </div>
+                    <div class="form-group">
+                        <label for="userRole">역할</label>
+                        <select id="userRole">
+                            <option value="ADMIN">ADMIN</option>
+                            <option value="MANAGER">MANAGER</option>
+                            <option value="VIEWER">VIEWER</option>
+                        </select>
+                    </div>
+
+                    <!-- 부서/팀 검색 후 선택 -->
+                    <div class="form-group">
+                        <label for="userDeptSearchInput">부서/팀</label>
+                        <div class="dept-search-row">
+                            <input type="text" id="userDeptSearchInput" placeholder="부서명 또는 코드 검색 (예: AX, D00173)">
+                            <button type="button" id="userDeptSearchBtn">검색</button>
+                        </div>
+                        <p id="userRoleDeptHint" class="hint"></p>
+                        <div id="userDeptSearchResults" class="dept-search-results"></div>
+                        <div id="userSelectedDept" class="selected-dept-box hidden"></div>
+                    </div>
+
+                    <!-- 상세에서만 표시되는 읽기전용 메타 -->
+                    <div id="userMeta" class="user-meta hint"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="userSaveBtn" type="button">저장</button>
+                <button id="userResetPwBtn" type="button" class="btn-secondary hidden">비밀번호 초기화</button>
+                <button id="userToggleActiveBtn" type="button" class="btn-secondary hidden">비활성화</button>
+                <button id="userModalCancelBtn" type="button" class="btn-secondary">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 본인 확인 팝업 (우측 상단 이름 클릭 → 현재 비밀번호 확인) ===== -->
+    <div id="verifyPwModalOverlay" class="modal-overlay hidden">
+        <div class="resume-detail-modal modal-narrow" role="dialog" aria-modal="true" aria-label="본인 확인">
+            <div class="resume-detail-modal-header">
+                <div>
+                    <h3>본인 확인</h3>
+                    <p class="hint">현재 비밀번호를 입력해주세요.</p>
+                </div>
+                <button id="verifyPwCloseBtn" type="button" class="modal-close" aria-label="닫기">×</button>
+            </div>
+            <div class="resume-detail-modal-body">
+                <div class="form-group">
+                    <label for="verifyPwInput">현재 비밀번호</label>
+                    <input type="password" id="verifyPwInput" autocomplete="current-password">
+                </div>
+                <p id="verifyPwError" class="text-danger hidden"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="verifyPwConfirmBtn" type="button">확인</button>
+                <button id="verifyPwCancelBtn" type="button" class="btn-secondary">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 내 정보 수정 팝업 (이메일/비밀번호만 수정) ===== -->
+    <div id="profileModalOverlay" class="modal-overlay hidden">
+        <div class="resume-detail-modal modal-narrow" role="dialog" aria-modal="true" aria-label="내 정보 수정">
+            <div class="resume-detail-modal-header">
+                <div>
+                    <h3>내 정보 수정</h3>
+                    <p class="hint">이메일과 비밀번호만 변경할 수 있습니다.</p>
+                </div>
+                <button id="profileCloseBtn" type="button" class="modal-close" aria-label="닫기">×</button>
+            </div>
+            <div class="resume-detail-modal-body">
+                <div id="profileNotice" class="user-notice hidden"></div>
+                <div class="form-group">
+                    <label for="profileLoginId">로그인ID</label>
+                    <input type="text" id="profileLoginId" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="profileName">이름</label>
+                    <input type="text" id="profileName" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="profileRole">역할</label>
+                    <input type="text" id="profileRole" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="profileEmail">이메일</label>
+                    <input type="text" id="profileEmail">
+                </div>
+                <div class="form-group">
+                    <label for="profileNewPw">새 비밀번호</label>
+                    <input type="password" id="profileNewPw" autocomplete="new-password" placeholder="변경할 때만 입력하세요">
+                </div>
+                <div class="form-group">
+                    <label for="profileNewPwConfirm">새 비밀번호 확인</label>
+                    <input type="password" id="profileNewPwConfirm" autocomplete="new-password">
+                </div>
+                <p id="profileError" class="text-danger hidden"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="profileSaveBtn" type="button">저장</button>
+                <button id="profileCancelBtn" type="button" class="btn-secondary">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 공고 등록/수정 + JD 팝업 ===== -->
+    <div id="postingModalOverlay" class="modal-overlay hidden">
+        <div class="resume-detail-modal" role="dialog" aria-modal="true" aria-label="공고/JD">
+            <div class="resume-detail-modal-header">
+                <div>
+                    <h3 id="postingModalTitle">공고 등록</h3>
+                    <p class="hint">공고 기본정보와 JD 내용을 입력한 뒤 저장해주세요.</p>
+                </div>
+                <button id="postingModalCloseBtn" type="button" class="modal-close" aria-label="닫기">×</button>
+            </div>
+            <div class="resume-detail-modal-body">
+                <div id="postingNotice" class="user-notice hidden"></div>
+
+                <!-- 공고 기본 정보 카드 -->
+                <section class="modal-card">
+                    <div class="modal-card-head">
+                        <h4 class="modal-card-title">공고 기본 정보</h4>
+                    </div>
+                    <div class="form-group">
+                        <label for="postingTitle">공고명/JD명</label>
+                        <input type="text" id="postingTitle">
+                    </div>
+                    <div class="form-group">
+                        <label for="postingDeptSearchInput">부서/팀</label>
+                        <div class="dept-search-row">
+                            <input type="text" id="postingDeptSearchInput" placeholder="부서명 또는 코드 검색 (예: DX, D00173)">
+                            <button type="button" id="postingDeptSearchBtn">검색</button>
+                        </div>
+                        <div id="postingDeptSearchResults" class="dept-search-results"></div>
+                        <div id="postingSelectedDept" class="selected-dept-box hidden"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="postingPlatform">플랫폼</label>
+                        <select id="postingPlatform">
+                            <option value="">선택 안 함</option>
+                            <option value="SARAMIN">사람인</option>
+                            <option value="JOBKOREA">잡코리아</option>
+                            <option value="WANTED">원티드</option>
+                            <option value="ETC">기타</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="postingUrl">플랫폼 공고 URL</label>
+                        <div class="dept-search-row">
+                            <input type="text" id="postingUrl" placeholder="https://...">
+                            <button type="button" id="postingExtractBtn">공고 내용 가져오기</button>
+                        </div>
+                        <p id="postingExtractMsg" class="hint"></p>
+                    </div>
+                    <div class="form-group">
+                        <label for="postingStatus">상태</label>
+                        <select id="postingStatus">
+                            <option value="OPEN">OPEN</option>
+                            <option value="CLOSED">CLOSED</option>
+                            <option value="INACTIVE">INACTIVE</option>
+                            <option value="DRAFT">DRAFT</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- JD 상세 카드 (공고 기본정보와 함께 처음부터 표시 — 통합 입력) -->
+                <section id="postingJdSection" class="modal-card">
+                    <div class="modal-card-head">
+                        <h4 class="modal-card-title">JD 상세 <span id="postingJdStatusBadge"></span></h4>
+                        <button id="postingJdRecommendBtn" type="button" class="btn-small btn-secondary">추천 JD</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="jdTitle">JD 제목</label>
+                        <input type="text" id="jdTitle" placeholder="비우면 공고명을 사용합니다">
+                    </div>
+                    <div class="form-group">
+                        <label for="jdRequired">자격 요건</label>
+                        <textarea id="jdRequired" rows="3" placeholder="- 해당분야 관련 경력 1~5년&#10;- 전문대졸 이상"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="jdPreferred">우대 사항</label>
+                        <textarea id="jdPreferred" rows="3" placeholder="- 관련 자격증 보유자&#10;- Cloud 플랫폼 운영 경험"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="jdContent">주요 업무</label>
+                        <textarea id="jdContent" rows="4" placeholder="직무의 주요 업무를 입력하세요."></textarea>
+                    </div>
+                </section>
+                <!-- 단일 저장 버튼: 공고 기본정보 + JD 를 한 번에 저장 (신규=공고 등록 / 수정=공고 수정) -->
+                <div class="btn-row right">
+                    <button id="postingSaveBtn" type="button">공고 등록</button>
+                </div>
+                <p id="postingError2" class="text-danger hidden"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="postingModalCancelBtn" type="button" class="btn-secondary">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=20260612-51"></script>
+</body>
+
+</html>

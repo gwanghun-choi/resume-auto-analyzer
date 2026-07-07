@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# 환경변수 (DB 접속정보/API 키 등 — .env.example 만 커밋)
+.env
+
+# Google OAuth 인증 정보 (절대 커밋 금지)
+credentials.json
+token.json
+*.token.json
+# secrets 디렉토리(예: secrets/google/credentials.json) 도 절대 커밋 금지
+secrets/
+app/secrets/
+
+# 런타임 로컬 저장소: 폴더 구조(.gitkeep)는 남기고, 저장된 데이터는 추적하지 않습니다.
+data/config/jd/*
+data/storage/uploads/*
+data/storage/results/*
+data/storage/failed/*
+data/google_drive/*
+!data/**/.gitkeep

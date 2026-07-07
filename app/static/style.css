@@ -1,0 +1,1131 @@
+:root {
+    --primary-color: #4a90e2;
+    --primary-hover: #357abd;
+    --success-color: #2ecc71;
+    --danger-color: #e74c3c;
+    --bg-color: #f5f7fa;
+    --card-bg: #ffffff;
+    --card-border: #e5e7eb;
+    --text-color: #1f2937;
+    --muted-color: #6b7280;
+    --radius: 12px;
+    --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+/* 메뉴별 콘텐츠 길이와 무관하게 세로 스크롤바 공간을 항상 확보
+   → 스크롤바 유무로 viewport 폭이 달라져 전체 UI가 좌우로 흔들리는 현상 방지.
+   overflow-y:scroll 이 핵심(전 브라우저), scrollbar-gutter 는 최신 브라우저 보강. */
+html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    margin: 0;
+    padding: 16px 24px 32px;
+}
+
+.app-header h1 {
+    text-align: center;
+    color: var(--primary-color);
+    font-size: 22px;
+    margin: 4px 0 2px;
+}
+
+.subtitle {
+    text-align: center;
+    color: var(--muted-color);
+    font-size: 13px;
+    margin: 0 0 18px;
+}
+
+/* 상단 헤더 우측: 현재 로그인 사용자 + 로그아웃 (제목은 중앙 유지하고 우측에 겹쳐 배치) */
+.app-header {
+    position: relative;
+}
+.user-bar {
+    position: absolute;
+    top: 0;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+}
+.user-bar .user-name { font-weight: 600; color: var(--text-color); cursor: pointer; }
+.user-bar .user-name:hover { text-decoration: underline; }
+.user-bar .user-role {
+    color: var(--muted-color);
+    font-size: 12px;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 1px 8px;
+}
+.user-bar .logout-btn {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+}
+
+/* ===== 로그인 화면 ===== */
+.login-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 6vh;
+}
+.login-card {
+    width: 360px;
+    max-width: 92vw;
+}
+.login-card h2 {
+    margin: 0 0 16px;
+    font-size: 18px;
+}
+.login-error {
+    margin: 12px 0 0;
+}
+
+/* 좌(메뉴) / 우(본문) 레이아웃 : 사이드바 고정 + 본문 wide. 1920+ 에서 과하게 퍼지지 않게 max-width 제한. */
+.layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    max-width: 1680px;
+    margin: 0 auto;
+}
+
+.sidebar {
+    flex: 0 0 220px;
+    position: sticky;
+    top: 16px;
+    padding: 14px;
+}
+
+.content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* ----- 사이드바 업무 메뉴 ----- */
+.menu-group + .menu-group {
+    margin-top: 14px;
+}
+.menu-group-title {
+    font-weight: 700;
+    cursor: pointer;
+    padding: 6px 8px;
+    user-select: none;
+    color: var(--muted-color);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+.menu-group-title .caret {
+    display: inline-block;
+    transition: transform 0.2s;
+    font-size: 11px;
+}
+.menu-group.collapsed .caret {
+    transform: rotate(-90deg);
+}
+.menu-group.collapsed .menu-items {
+    display: none;
+}
+.menu-items {
+    list-style: none;
+    margin: 6px 0 0;
+    padding-left: 6px;
+}
+.menu-item {
+    padding: 9px 12px;
+    margin: 2px 0;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.2;
+}
+.menu-item:hover {
+    background: #eef4fc;
+}
+.menu-item.active {
+    background: var(--primary-color);
+    color: #fff;
+    font-weight: 600;
+}
+/* 외부 링크 메뉴(Drive 바로가기 등)의 ↗ 아이콘 */
+.menu-item .ext-icon {
+    color: var(--muted-color);
+    font-size: 12px;
+    margin-left: 2px;
+}
+
+/* TODO 안내 화면의 외부 API 링크 (새 탭) */
+.todo-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+}
+.todo-link:hover {
+    text-decoration: underline;
+}
+.todo-link .ext-icon {
+    font-size: 12px;
+    margin-left: 2px;
+}
+
+/* ----- 화면(view) 헤더 ----- */
+.view > h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 4px 0 4px;
+}
+.view-desc {
+    color: var(--muted-color);
+    font-size: 13px;
+    margin: 0 0 18px;
+}
+
+/* 부서 트리(왼쪽) + 작업 폼(오른쪽) 2분할 */
+.split {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+.tree-panel {
+    flex: 0 0 280px;
+    position: sticky;
+    top: 16px;
+}
+.tree-panel h3 {
+    margin-top: 0;
+}
+/* 폼 영역은 너무 넓게 퍼지지 않도록 상한을 둡니다. (JD 등록/이력서 등록) */
+.form-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 820px;
+}
+
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    padding: 20px;
+    margin-bottom: 16px;
+}
+.card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0 0 12px;
+}
+
+/* ----- 부서 트리 ----- */
+/* 트리 목록 영역 내부에서만 세로 스크롤 (JD 등록/이력서 등록/이력서 현황 공통) */
+.dept-tree {
+    max-height: calc(100vh - 360px);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+/* 부서명 검색 input + 버튼 (부서명만 검색, 사원명 검색 없음) */
+.dept-tree-search {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.dept-tree-search input {
+    flex: 1;
+    min-width: 0;
+    height: 34px;
+    box-sizing: border-box;
+}
+.dept-tree-search button {
+    height: 34px;
+    flex-shrink: 0;
+    /* 텍스트 가로/세로 중앙 정렬 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    line-height: 1;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+.dept-tree ul {
+    list-style: none;
+    margin: 0;
+    padding-left: 16px;
+}
+.dept-tree > ul {
+    padding-left: 0;
+}
+.dept-tree li {
+    margin: 4px 0;
+}
+/* 한 부서 행(아이콘 + 이름) */
+.tree-row {
+    display: inline-flex;
+    align-items: center;
+}
+/* 펼침/접힘 아이콘 (▶ / ▼) */
+.tree-toggle {
+    display: inline-block;
+    width: 1.1em;
+    text-align: center;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+}
+/* leaf(팀)의 아이콘 자리 맞춤용 빈 공간 */
+.tree-toggle-space {
+    display: inline-block;
+    width: 1.1em;
+}
+.tree-group {
+    font-weight: bold;
+    color: #555;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+.tree-group:hover {
+    background: #f0f0f0;
+}
+.tree-team {
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+}
+.tree-team:hover {
+    background: #eef4fc;
+}
+.tree-team.selected,
+.tree-group.selected {
+    background: var(--primary-color);
+    color: #fff;
+}
+/* 부서명 검색 매칭 노드 강조 (검색 중 검색어가 포함된 부서명만) */
+.tree-group.search-matched,
+.tree-team.search-matched {
+    color: #b42318;
+    font-weight: 700;
+}
+/* 선택된 부서가 검색 매칭과 겹치면 선택 스타일(흰 글자)을 우선합니다. */
+.tree-team.selected.search-matched,
+.tree-group.selected.search-matched {
+    color: #fff;
+}
+
+.selected-dept {
+    color: var(--primary-color);
+    margin-top: 0;
+}
+/* JD 카드 제목 라인 (제목 좌측 + 추천JD 버튼 우측) */
+.jd-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.jd-card-head h3 {
+    margin: 0;
+}
+
+/* ----- 폼 ----- */
+.form-group {
+    margin-bottom: 15px;
+}
+.form-row {
+    display: flex;
+    gap: 16px;
+}
+.form-row .form-group {
+    flex: 1;
+}
+
+label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 6px;
+}
+
+input[type="text"], input[type="number"], input[type="file"], input[type="date"],
+input[type="password"],
+select, textarea {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-color);
+}
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15);
+}
+textarea {
+    min-height: 72px;
+    line-height: 1.5;
+}
+
+button {
+    background-color: var(--primary-color);
+    color: #fff;
+    padding: 0 16px;
+    height: 38px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    white-space: nowrap;
+}
+button:hover {
+    background-color: var(--primary-hover);
+}
+button:disabled {
+    background-color: #cbd5e1;
+    color: #f1f5f9;
+    cursor: not-allowed;
+}
+/* secondary(보조) / danger 버튼: 필요한 곳에 클래스로 적용 */
+.btn-secondary {
+    background-color: #fff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+.btn-secondary:hover {
+    background-color: #f3f4f6;
+}
+.btn-danger {
+    background-color: var(--danger-color);
+}
+.btn-danger:hover {
+    background-color: #c0392b;
+}
+
+.hint {
+    color: #7f8c8d;
+    font-size: 13px;
+    margin: 8px 0;
+}
+
+/* 버튼 여러 개를 나란히 배치 (부서 설정 JSON 관리 등) */
+.btn-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+}
+/* 버튼 행 우측 정렬(공고/JD 모달의 저장 버튼 등) */
+.btn-row.right { justify-content: flex-end; }
+
+/* ===== 공고/JD 모달: 공고 기본정보 / JD 상세 영역 카드 구분 ===== */
+.modal-card {
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    background: #fbfcfe;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+.modal-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.modal-card-title {
+    margin: 0;
+    font-size: 14px;
+    color: #1f2937;
+}
+
+/* JSON 표시/편집용 textarea (pretty print 가독성) */
+textarea.mono {
+    font-family: 'Consolas', 'Courier New', monospace;
+    white-space: pre;
+    font-size: 13px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* ----- 결과 카드 ----- */
+.result-error {
+    border-left: 5px solid var(--danger-color);
+}
+
+.tag {
+    display: inline-block;
+    background: #eef4fc;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin: 2px;
+    font-size: 13px;
+}
+
+.text-success { color: var(--success-color); font-weight: bold; }
+.text-danger { color: var(--danger-color); font-weight: bold; }
+.text-warning { color: #b45309; font-weight: bold; }
+.text-primary { color: var(--primary-color); font-weight: bold; }
+
+/* ===== 이력서 현황: 게시판형 레이아웃 ===== */
+/* 상단 검색 toolbar (가로 컴팩트) */
+.status-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+.status-toolbar label {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    font-size: 12px;
+    color: #555;
+    margin: 0 2px 0 6px;
+}
+.status-toolbar select,
+.status-toolbar input,
+.status-toolbar button {
+    height: 36px;
+    box-sizing: border-box;
+    margin: 0;
+    font-size: 13px;
+}
+.status-toolbar input[type="date"] { width: 138px; }
+/* 분석상태/추천결과 select 는 고정 폭(전역 select{width:100%} 이 toolbar 를 한 줄씩 늘리는 것 방지) */
+/* 폭을 줄여 Excel 다운로드까지 같은 row 에 들어오게 함 (넓은 화면 한 줄 유지, 좁으면 wrap) */
+.status-toolbar select { width: 128px; min-width: 120px; }
+/* toolbar 의 텍스트 검색 input(공고명/파일명 등)은 전역 input{width:100%} 을 덮어 compact 하게 — 검색/초기화 버튼과 같은 줄 유지 */
+.status-toolbar input[type="text"] { width: 180px; min-width: 150px; }
+/* toolbar 버튼(검색/초기화/Excel) 텍스트 가로/세로 중앙 정렬 */
+.status-toolbar button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 16px;
+    line-height: 1;
+    white-space: nowrap;
+}
+/* Excel 다운로드는 toolbar 오른쪽 끝으로 (현재는 view-head-row 로 이동) */
+.status-toolbar .excel-button { margin-left: auto; }
+/* 검색/초기화(+검색 input)를 한 묶음으로 — wrap 되더라도 검색·초기화가 분리되지 않게 함 */
+.status-toolbar .toolbar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;   /* 넓은 화면에서는 오른쪽으로 모아 배치 */
+}
+
+/* 본문: 좌 트리 + 우 테이블 */
+.resume-status-content {
+    display: flex;
+    gap: 16px;
+    /* 고정 높이 X. 각 카드는 자기 콘텐츠만큼 auto 높이를 갖고 서로 종속되지 않게 함.
+       (stretch 면 한쪽이 길어질 때 다른 카드 외곽도 같이 늘어남 → flex-start 로 독립) */
+    align-items: flex-start;
+}
+.resume-status-tree-panel {
+    width: 300px;
+    flex-shrink: 0;
+    border: 1px solid var(--card-border);
+    background: #fff;
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    padding: 14px;
+    /* 카드 자체를 뷰포트 높이로 캡(height:auto + max-height) → 부서 트리가 길어져도 페이지 전체가
+       밀리지 않음. 헤더/검색은 고정(flex:0), 실제 트리만 내부 스크롤(아래 .dept-tree flex:1).
+       overflow:hidden 으로 flex 자식이 카드 max-height 를 넘쳐 body 를 밀지 않도록 보장. */
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 240px);
+    overflow: hidden;
+}
+.tree-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    flex: 0 0 auto;
+}
+.resume-status-tree-panel .dept-tree-search { flex: 0 0 auto; }
+.resume-status-tree-panel .dept-tree {
+    white-space: nowrap;
+    /* 카드가 높이를 캡하므로 트리 자체 max-height 는 해제하고 남은 공간을 채우며 내부 스크롤 */
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+.resume-status-table-panel {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--card-border);
+    background: #fff;
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    padding: 14px;
+    /* 카드 높이는 내용만큼(auto). 테이블 목록(.table-scroll)이 자체 max-height 로 캡+내부 스크롤,
+       페이지네이션은 그 아래 고정. (좌측 트리 카드 높이에 종속되지 않음) */
+}
+.status-list-meta {
+    margin-bottom: 8px;
+    color: #555;
+    font-size: 13px;
+}
+.status-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+/* ===== 상태 badge ===== */
+.badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+.badge-green { background: #e6f4ea; color: #1e7e34; }
+.badge-red   { background: #fdecea; color: #c0392b; }
+.badge-blue  { background: #e8f0fe; color: #1a73e8; }
+.badge-amber { background: #fef7e0; color: #b06000; }
+.badge-gray  { background: #eceff1; color: #546e7a; }
+
+/* ===== 상세 보기 모달 ===== */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+/* .modal-overlay 가 display:flex 를 갖기 때문에, .hidden 만으로는 숨겨지지 않습니다.
+   (같은 specificity 에서 뒤에 정의된 display:flex 가 이김) → hidden 일 때 명시적으로 숨깁니다. */
+.modal-overlay.hidden {
+    display: none;
+}
+.resume-detail-modal {
+    width: min(960px, 95vw);
+    max-height: 88vh;
+    /* 모달 본문 컨테이너는 항상 불투명한 흰색 배경 (overlay 만 반투명, 본문은 opacity:1) */
+    background: #fff;
+    opacity: 1;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+/* 좁은 팝업(본인 확인 / 내 정보 수정 등): 너비만 다르게, 흰색 배경 등은 기본 규칙 그대로 상속 */
+.resume-detail-modal.modal-narrow {
+    width: min(440px, 95vw);
+}
+.resume-detail-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e3e3e3;
+}
+.resume-detail-modal-header h3 {
+    margin: 0;
+}
+.resume-detail-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    padding: 0 4px;
+}
+.modal-close:hover {
+    color: #333;
+}
+.modal-section {
+    margin-bottom: 18px;
+}
+.modal-section h4 {
+    margin: 0 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eee;
+}
+
+/* ===== 사용자 관리 화면/팝업 ===== */
+.view-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.view-head-row h2 { margin: 0; }
+
+/* 사용자 목록: 역할/상태 badge, 부서 보조코드 */
+#adminUsersTable .dept-code { color: var(--muted-color); font-size: 11px; }
+#adminUsersTable .row-action { color: var(--primary-color); cursor: pointer; }
+.data-table tbody tr.clickable-row { cursor: pointer; }
+
+/* 팝업 하단 버튼줄 */
+.modal-footer {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    border-top: 1px solid #e3e3e3;
+}
+.modal-footer .btn-secondary { margin-left: 0; }
+
+/* 부서 검색 행/결과 */
+.dept-search-row { display: flex; gap: 8px; }
+.dept-search-row input { flex: 1 1 auto; }
+.dept-search-results {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+.dept-search-results:empty { display: none; }
+.dept-search-result {
+    padding: 8px 10px;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+.dept-search-result:hover { background: #f5f9ff; }
+.dept-search-result .name { font-weight: 600; }
+.dept-search-result .meta { color: var(--muted-color); font-size: 12px; }
+.selected-dept-box {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    background: #f3f8ff;
+}
+.selected-dept-box.hidden { display: none; }
+
+/* 1회성 안내(임시 비밀번호 등) */
+.user-notice {
+    padding: 12px 14px;
+    border: 1px solid #b7e1c4;
+    background: #eafaf0;
+    border-radius: 8px;
+    margin-bottom: 14px;
+}
+.user-notice.hidden { display: none; }
+.user-notice .temp-pw {
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e7e34;
+    letter-spacing: 0.04em;
+}
+.user-meta { margin-top: 10px; white-space: pre-line; }
+.user-meta:empty { display: none; }
+.modal-section .kv {
+    margin: 4px 0;
+}
+/* 상세 팝업 기본 정보/분석 상태: 2열(th td th td) 테이블. 팝업 크기는 그대로, 내부 표시만 정리 */
+.resume-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 13px;
+}
+.resume-detail-table th {
+    width: 84px;
+    padding: 6px 8px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb;
+    color: #555;
+}
+.resume-detail-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+}
+/* 상세 팝업 파일명: 원본 다운로드 링크 (ADMIN/MANAGER) */
+.file-download-link {
+    color: var(--primary-color);
+    text-decoration: underline;
+    cursor: pointer;
+}
+.file-download-link:hover {
+    color: var(--primary-hover);
+}
+.file-download-link .dl-icon {
+    font-size: 12px;
+    margin-left: 2px;
+}
+
+/* ===== 이력서 업로드 결과 (운영자 친화) ===== */
+.upload-summary { margin-bottom: 14px; }
+.upload-done { font-size: 15px; margin: 0 0 10px; }
+.upload-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.upload-section-title { margin: 16px 0 8px; font-size: 14px; color: #475569; }
+.upload-detail { margin-top: 16px; }
+.upload-detail > summary {
+    cursor: pointer;
+    color: var(--muted-color);
+    font-size: 13px;
+    user-select: none;
+}
+.upload-detail[open] > summary { margin-bottom: 8px; }
+
+/* 상세 정보 테이블: 라벨 컬럼 고정폭 + 값은 줄바꿈, 카드 밖으로 튀지 않게 */
+.upload-detail-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.upload-detail-table th,
+.upload-detail-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #eef0f3;
+    vertical-align: top;
+    text-align: left;
+}
+.upload-detail-table th {
+    width: 150px;
+    white-space: nowrap;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+}
+.upload-detail-table td {
+    color: var(--text-color);
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+/* 긴 문자열(경로/근거/Drive id 등)은 줄바꿈 허용 */
+.long-text {
+    margin: 2px 0 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #444;
+}
+
+/* ===== 반응형 ===== */
+@media (max-width: 1100px) {
+    .resume-status-content {
+        flex-direction: column;
+    }
+    .resume-status-tree-panel {
+        width: 100%;
+        max-height: 360px;
+    }
+}
+
+/* ----- 이력서 현황: 목록 테이블 ----- */
+.table-scroll {
+    /* 컬럼 폭(합 100%)으로 카드 안에 맞추므로 가로 스크롤 불필요. 세로 스크롤만 유지.
+       max-height 로 캡 → 카드는 내용만큼 auto 높이, 목록 영역만 내부 스크롤. (사용자 관리 테이블 공용) */
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    max-height: 480px;
+    overflow-y: auto;
+}
+.data-table {
+    width: 100%;
+    /* 8컬럼(colgroup 폭)으로 카드 안에 자연스럽게 들어오게 함 — 가로 스크롤 방지(폭은 colgroup 비율로 분배) */
+    min-width: 0;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+    table-layout: fixed;
+    vertical-align: middle;
+}
+/* 모든 셀은 줄바꿈 없이 넘치면 ellipsis (세로 깨짐 방지) */
+.data-table th,
+.data-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* 파일명: 폭 제한 + 말줄임(전체 파일명은 td title 로 확인) */
+.data-table td.cell-filename {
+    max-width: 220px;
+}
+.data-table td.cell-score {
+    text-align: center;
+}
+/* 체크박스 컬럼(분석 대기 파일 테이블 등): 가운데 정렬 */
+.data-table th.cell-check,
+.data-table td.cell-check {
+    text-align: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+.data-table .cell-check input[type="checkbox"] {
+    cursor: pointer;
+    margin: 0;
+}
+/* row 클릭으로 상세 팝업 — 클릭 가능 느낌(커서/hover) */
+.data-table tbody tr.clickable-row {
+    cursor: pointer;
+}
+/* 분석 작업 관리: 선택된 공고 행 강조 */
+.data-table tbody tr.clickable-row.selected {
+    background: #eef4ff;
+}
+/* 제목 셀(공고명/부서명 등): 폭 제한 없이 컬럼 폭을 채우고 말줄임(전체는 title tooltip) */
+.data-table td.cell-title {
+    max-width: none;
+    font-weight: 500;
+}
+/* 가독성 강화 테이블(공고/JD 관리 목록): 행 높이/글자 여유 */
+.data-table-roomy { font-size: 13.5px; }
+.data-table-roomy th,
+.data-table-roomy td { padding: 12px 12px; }
+
+/* ===== 분석 작업 관리: 좁은 좌측 패널의 공고 카드 리스트 ===== */
+.analysis-posting-panel {
+    flex: 0 0 340px;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+}
+/* 분석 작업 관리 본문: 상단 검색 카드와 좌우 라인을 맞추고(전체 폭 사용),
+   좌측 공고/JD 카드는 넓게(400px), 우측(대기/실행) 카드는 남은 폭 전부 사용 */
+.analysis-split { width: 100%; }
+/* 3컬럼(부서/팀 · 공고/JD · 대기+실행) 구성: 공고/JD 카드는 폭을 줄이되 최소 280px 확보 */
+.analysis-split .analysis-posting-panel { flex: 0 0 320px; }
+.analysis-split .form-panel { max-width: none; }
+
+/* 분석 작업 관리 부서/팀 패널 (이력서 현황 트리와 동일 높이 정책 — 카드 캡 + 내부 스크롤) */
+.analysis-dept-panel {
+    flex: 0 0 240px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 240px);
+    overflow: hidden;
+}
+.analysis-dept-panel .tree-panel-head,
+.analysis-dept-panel .dept-tree-search { flex: 0 0 auto; }
+.analysis-dept-panel .dept-tree {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+
+/* 목록 카드 상단: 총 N건(좌) + 페이지당 표시 select(우) */
+.list-head-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.page-size-select { width: auto; min-width: 110px; }
+
+/* 이력서 업로드 영역: 기존 미처리(분석 대기) 이력서 요약 */
+.upload-pending-summary {
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    background: #fbfcfe;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+.upload-pending-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: #475569;
+}
+.upload-pending-list li { line-height: 1.5; }
+
+.analysis-posting-panel h3 { margin-top: 0; }
+.posting-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.posting-card {
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+}
+.posting-card:hover { background: #f5f9ff; }
+.posting-card.selected {
+    border-color: #3b82f6;
+    background: #eff5ff;
+}
+.posting-card .pc-title {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #1f2937;
+    /* 길면 최대 2줄까지 표시 후 말줄임 */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.posting-card .pc-meta {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.posting-card .pc-platform {
+    margin-left: 6px;
+    padding-left: 6px;
+    border-left: 1px solid #d1d5db;
+}
+.posting-card .pc-badges {
+    margin-top: 7px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.data-table th,
+.data-table td {
+    border-bottom: 1px solid #eef0f3;
+    padding: 9px 10px;
+    text-align: left;
+    line-height: 1.4;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+/* badge 가 셀(컬럼 폭) 밖으로 튀지 않도록 — 공간 부족 시 셀 overflow:hidden 으로 말줄임 */
+.data-table .badge {
+    max-width: 100%;
+}
+.data-table thead th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    border-bottom: 1px solid var(--card-border);
+    z-index: 1;
+}
+.data-table tbody tr:hover {
+    background: #f5f9ff;
+}
+/* 데이터 없음 행: 가운데 정렬 */
+.data-table td.empty-cell {
+    text-align: center;
+    padding: 28px;
+    color: #94a3b8;
+}
+/* 작은 버튼(상세/전체 부서 등): base button 높이를 컴팩트하게 재정의 */
+.btn-small {
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* ===== 관리자 > Google Drive 동기화: stat 카드 + key-value 테이블 ===== */
+/* 숫자 통계(departments / dept_drive_folders) */
+.stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 4px 0 14px;
+}
+.stat-card {
+    flex: 1 1 140px;
+    min-width: 120px;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 12px 14px;
+}
+.stat-card .stat-label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted-color);
+    margin-bottom: 4px;
+}
+.stat-card .stat-value {
+    display: block;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.1;
+}
+/* (legacy 제거) 클릭 가능한 통계 카드(.stat-card.clickable) / 부서별 JD 등록 현황 팝업
+   테이블(.jd-status-table) / 등록불가 badge(.badge-muted)는 job_descriptions 카드와 함께 삭제. */
+
+/* key-value 정보 테이블 (최근 동기화 상태 등) */
+.kv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.kv-table th {
+    width: 180px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted-color);
+    background: #f8fafc;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--card-border);
+    white-space: nowrap;
+    vertical-align: top;
+}
+.kv-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--card-border);
+    word-break: break-all;
+    color: var(--text-color);
+}
+
+/* 빈 상태(empty state) 안내: 카드 안에서 깔끔하게 */
+.empty-state {
+    color: var(--muted-color);
+    font-size: 13px;
+    padding: 14px;
+    text-align: center;
+    border: 1px dashed #d1d5db;
+    border-radius: 10px;
+    background: #fafafa;
+}

@@ -1,0 +1,28 @@
+.git
+.gitignore
+
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# 환경변수/시크릿: 절대 이미지에 포함하지 않음 (runtime env_file/volume 으로만 주입)
+.env
+.env.*
+!.env.example
+
+secrets
+app/secrets
+
+credentials.json
+token.json
+
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# 배포용 압축 산출물
+resume-ai.tar.gz
+*.tar.gz
