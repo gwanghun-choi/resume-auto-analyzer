@@ -319,7 +319,7 @@
 ### 남은 TODO (후속 작업)
 - [ ] **실제 운영 스케줄러 활성화**: `apscheduler` 의존성 추가(`uv sync`) → `scheduler_service.start_scheduler()` 주석 해제 → `SARAMIN_DISCOVERY_ENABLED=true` 일 때 startup 에서 단일 프로세스로 호출. (다중 워커 중복 실행 주의)
 - [ ] **관리자 화면에서 수집 결과 확인**: 현재는 API 응답/로그로만 확인. 수동 실행 버튼 + 결과 요약 화면(공고/JD 관리) 추가 검토.
-- [ ] **플랫폼 확장**: 잡코리아/원티드 등 다른 플랫폼 검색 수집기(현재 사람인만). external_id 컬럼 정식 추가 여부는 그때 재검토(현재는 URL 컬럼으로 중복 판단).
+- [x] **플랫폼 확장(잡코리아)**: `jobkorea_job_collect_service` 추가(2026-07-08). 원티드 등은 후속. external_id 컬럼은 계속 미추가(URL 컬럼 + 플랫폼 스코프로 중복 판단).
 
 ### [2026-07-07] 3차 — URL 수집 파서 fallback 보강
 - [x] **사람인 공고 URL 수집 fallback 보강**: 정적 HTML 파싱을 3단계로 견고화 — 1차 `item_recruit` 카드, 2차 `corp_name` 세그먼트 + `a.str_tit`/`a[id^=rec_link_]`/`relay/view href` 결속(카드 클래스 변경 대응), 3차 링크 전체 스캔(감지/로깅). rec_idx dedupe(1차 우선, 제목 비면 2차 보강), 회사명 결속 없는 링크는 미등록. mock 8케이스 검증.
@@ -392,6 +392,27 @@
 - [ ] **Celery 도입 시** `analyze_posting`(+`job_extract_service`/`job_posting_service`)만 큐에 태우기. `analyze_pending`/`batch_service` 는 대상 아님.
 - [ ] **인증 없는 legacy/admin API 정리**: `resume_router`(/api/resume, 인증 없음), `drive_router`/`departments_router`/`db_router`/`dept_router`/`upload_router` 인증 적용 검토(이전 보안 이슈와 통합).
 - [ ] legacy 화면 코드(`view-jd` 섹션 + app.js `loadJd`/`saveJd`/`recommendJd`) 제거 여부 결정(현재 메뉴 미연결로 비활성 — 프론트 변경은 별도 작업).
+
+---
+
+## [2026-07-08] 잡코리아 수집 배치 + platform_code 자동 매핑 + 테이블 리스트업 — 완료 및 남은 TODO
+
+> 배경: 사람인 배치에 더해 잡코리아 신규 공고 수집을 추가하고, URL→platform_code 자동 매핑을 확정. 미사용 테이블은 삭제 없이 리스트업만. (근거: `docs/work-log/2026-07-08-jobkorea-collector-and-table-usage.md`, `docs/db-table-usage-analysis.md`)
+
+### 완료
+- [x] **잡코리아 수집기**: `app/services/jobkorea_job_collect_service.py`(정적 SSR 파싱, `GI_Read/{gno}` canonical, `㈜→(주)` 후 사람인 `is_didim_company` 재사용). 라이브 read-only: cards=20 / 디딤(주) 12건 / parser_missed=0.
+- [x] **배치 통합**: `job_posting_discovery_service` 를 플랫폼 공통 코어로 일반화(`discover_saramin_didim`/`discover_jobkorea_didim`), 중복 판단 플랫폼 스코프, **dry-run** 추가. `POST /api/jobs/discover/jobkorea/didim`(+`dry_run`), 사람인도 `dry_run` 지원. 스케줄러 `run_jobkorea_didim_discovery()`(등록은 주석 유지).
+- [x] **platform_code 자동 매핑**: `job_extract_service.platform_code_for_url` 단일 진입점. `create_posting`/`update_posting` 이 URL 도메인으로 자동 채움(사용자 선택 존중, 미지원 도메인 None). saramin→SARAMIN / jobkorea→JOBKOREA / 기타→기존 기본값.
+- [x] **테이블 사용 분석**: `docs/db-table-usage-analysis.md`(분류표 + 근거/선행작업/cleanup 초안). REMOVE_CANDIDATE(코드 미사용)=없음. legacy 제거 후보=`job_descriptions`/`dept_drive_folders`(삭제 미실행).
+- [x] **테스트**: `tests/test_job_collectors.py`(plain-assert, pytest 미도입) ALL PASSED + 일회용 Postgres DB 통합(자동매핑/중복/ dry-run/사람인 회귀). 운영 DB 미접근.
+
+### 남은 TODO (후속)
+- [ ] **JobKorea collector fallback 안정화**: 잡코리아가 `data-sentry-component="Title"`/`GI_Read` 구조를 바꾸면 파서 수정 필요 → `parser_missed` 로그 감지, 속성 변경 대비 2차 파서 검토.
+- [ ] **JobKorea 라이브 dry-run 정기 검증**: 실제 검색 URL 정기 점검(수집 0건/구조 변경 조기 감지).
+- [ ] **platform_code enum/constraint 정리 필요 여부**: 현재 `VALID_PLATFORM`(SARAMIN/JOBKOREA/WANTED/ETC)은 서비스 레벨 검증만, DB check constraint 없음. 점핏/인크루트/커리어 등 확장 시 enum/제약 정식화 검토.
+- [ ] **레거시 테이블 삭제 전 API/UI 호출 제거 확인**: `job_descriptions`/`dept_drive_folders` — `docs/db-table-usage-analysis.md` 6장 선행 작업(프론트 호출 제거·deprecated·백업·승인) 후에만 cleanup.
+- [ ] **`analysis_jobs` 테이블 도입 검토**: 수집/분석 작업 상태 조회·재처리(사람인·잡코리아 배치 결과 포함).
+- [ ] **Playwright 기반 collector fallback 검토**: 잡코리아는 현재 SSR 이라 불필요하나, 향후 JS 렌더링 전환/타 플랫폼 대비(도입 시 Docker chromium 검토).
 
 ---
 

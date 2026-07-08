@@ -15,7 +15,7 @@
 - [5. 업무 흐름 (순서도)](#5-업무-흐름-순서도)
 - [6. 이력서 분석 점수 산출 기준](#6-이력서-분석-점수-산출-기준)
 - [7. 비동기 작업 (Redis / Celery)](#7-비동기-작업-redis--celery)
-- [8. 사람인 신규 공고 자동 수집](#8-사람인-신규-공고-자동-수집)
+- [8. 채용 플랫폼 신규 공고 자동 수집 (사람인·잡코리아)](#8-채용-플랫폼-신규-공고-자동-수집-사람인잡코리아)
 - [9. 권한 (RBAC)](#9-권한-rbac)
 - [10. API 요약](#10-api-요약)
 - [11. 프로젝트 구조](#11-프로젝트-구조)
@@ -266,7 +266,7 @@ sequenceDiagram
 
 | 큐 | Task | 역할 | 트리거 |
 | --- | --- | --- | --- |
-| `job_discovery` | `analyze_job_posting_jd_task` | 사람인 신규 공고의 상세 URL 분석 → JD 생성/저장 → Drive 폴더 | 사람인 수집 배치 |
+| `job_discovery` | `analyze_job_posting_jd_task` | 신규 공고의 상세 URL 분석 → JD 생성/저장 → Drive 폴더 | 사람인·잡코리아 수집 배치 |
 | `resume_analysis` | `analyze_resume_posting_task` | 공고 기준 이력서 분석(download/parse/OpenAI/이동/저장) | `analyze-posting/selected/all` |
 
 **설계 원칙**
@@ -291,31 +291,42 @@ stateDiagram-v2
 
 ---
 
-## 8. 사람인 신규 공고 자동 수집
+## 8. 채용 플랫폼 신규 공고 자동 수집 (사람인·잡코리아)
 
-사람인 '디딤' 검색 결과에서 **디딤(주)** 신규 공고를 자동으로 `job_postings`에 등록하고, JD 분석은 Celery worker가 비동기로 처리합니다.
+**사람인·잡코리아** 검색 결과에서 **디딤(주)** 신규 공고를 자동으로 `job_postings`에 등록하고, JD 분석은 Celery worker가 비동기로 처리합니다. 두 플랫폼은 **같은 등록/큐 로직**(`job_posting_discovery_service._discover`)을 재사용하며, 각 수집기만 플랫폼별로 분리되어 있습니다(복붙 없음).
 
 ```mermaid
 flowchart TD
-    S["사람인 검색 결과 정적 수집<br/>(SSRF 방어)"] --> P["파서: 1차 item_recruit<br/>→ 2차 corp_name+str_tit/rec_link<br/>→ 3차 링크 스캔(감지)"]
+    S["플랫폼 검색 결과 정적 수집<br/>(SSRF 방어 재사용)"] --> P["수집기<br/>사람인: item_recruit→corp_name→링크스캔<br/>잡코리아: GI_Read 제목/회사 앵커(SSR)"]
     P --> F{"회사명 = 디딤(주)?<br/>(normalize exact)"}
     F -->|No| X["제외 (다른 디딤 계열)"]
-    F -->|Yes| N{"detail_url/rec_idx<br/>기존 공고와 중복?"}
+    F -->|Yes| N{"platform_code + 공고 id<br/>/ normalized_url 중복?"}
     N -->|중복| DUP["skip"]
-    N -->|신규| I["job_postings insert (DRAFT)"]
+    N -->|신규| I["job_postings insert (DRAFT)<br/>platform_code=SARAMIN/JOBKOREA"]
     I --> Q["analyze_job_posting_jd_task<br/>.delay(posting_id) → JD_QUEUED"]
     Q --> W["Worker: extract_from_url 재사용<br/>→ JD 저장 → Drive 폴더 → JD_READY"]
 ```
 
-| 특징 | 내용 |
-| --- | --- |
-| 회사명 필터 | `디딤(주)`/`디딤 (주)`/`디딤 주식회사`만 exact 통과. 회사명 결속 없는 링크는 미등록. |
-| 중복 판단 | `platform_posting_url`(정규화 detail_url / `rec_idx`) 기준. 큐에는 `detail_url`이 아니라 `posting_id`. |
-| URL 정규화 | tracking/`view_type` 제거, `rec_idx`만 유지: `.../relay/view?rec_idx=NNN` |
-| 수동 실행 | `POST /api/jobs/discover/saramin/didim` (ADMIN/MANAGER) |
-| 스케줄러 | 1시간 주기 코드 존재하나 **주석 처리**(startup 자동 실행 안 함) |
+**지원 플랫폼 / platform_code 자동 매핑** — URL 도메인 기준(`job_extract_service.platform_code_for_url`). 수동 공고 등록/수정도 platform_code 미입력 시 URL 로 자동 채웁니다(사용자가 고른 값은 유지).
 
-> ⚠️ **실측 한계**: 대상 검색 URL의 결과 목록이 **JS 렌더링**이라 정적 HTML에 상세 링크가 없어 라이브 정적 수집은 0건입니다. 정적 파서 fallback은 마크업이 존재할 때 정확히 동작하며, 실제 라이브 수집에는 **브라우저 렌더링 DOM fallback(Playwright/Selenium)** 이 필요합니다(후속 과제).
+| URL 도메인 | platform_code |
+| --- | --- |
+| `saramin.co.kr` | `SARAMIN` |
+| `jobkorea.co.kr` | `JOBKOREA` |
+| 그 외(미지원/알 수 없음) | 기존 기본값(`None`) — 오류 없이 통과 |
+
+| 특징 | 사람인 (SARAMIN) | 잡코리아 (JOBKOREA) |
+| --- | --- | --- |
+| 검색 렌더링 | 목록이 **JS 렌더링**(라이브 정적 수집 한계) | **서버 렌더링(SSR)** — 정적 수집 동작(라이브 12건 확인) |
+| 공고 식별자 | `rec_idx` | `GI_Read/{gno}`(GI_No) |
+| URL 정규화 | tracking 제거, `.../relay/view?rec_idx=NNN` | tracking 제거, `.../Recruit/GI_Read/{gno}` |
+| 회사명 필터 | `디딤(주)`/`디딤 (주)`/`디딤 주식회사` exact (공용) | 동일 필터 재사용 (`디딤㈜`는 `(주)` 치환 후) |
+| 수동 실행 | `POST /api/jobs/discover/saramin/didim` | `POST /api/jobs/discover/jobkorea/didim` |
+
+- **공통**: 중복은 `platform_code` + 공고 식별자(정규화 `platform_posting_url`) 기준(별도 `external_id` 컬럼 없음). 큐에는 `detail_url`이 아니라 **`posting_id`**. 회사명 결속 없는 링크는 미등록(false positive 방지). 스케줄러 1시간 주기 코드는 있으나 **주석 처리**(startup 자동 실행 안 함).
+- **dry-run**: `...?dry_run=true` → 실제 insert/큐 적재 없이 수집·중복 판단 결과(`platform_code`/`company_name`/`title`/`raw_url`/`normalized_url`/`is_duplicate`/`skip_reason`)만 반환(검증용).
+
+> ⚠️ **사람인 실측 한계**: 사람인 검색 결과 목록은 **JS 렌더링**이라 정적 HTML에 상세 링크가 없어 라이브 정적 수집은 0건입니다(파서는 마크업 존재 시 정확히 동작). 실제 라이브 수집에는 **브라우저 렌더링 DOM fallback(Playwright/Selenium)** 이 필요합니다(후속 과제). **잡코리아는 SSR 이라 현재 정적 수집이 동작**하나, 사이트 구조 변경 시 파서 수정이 필요합니다(`parser_missed` 로그로 감지).
 
 ---
 
@@ -346,7 +357,7 @@ flowchart TD
 | `admin_users_router` | `/api/admin` | 사용자 CRUD·활성 토글·비번 초기화 (ADMIN) | KEEP |
 | `job_postings_router` | `/api/job-postings` | 목록/검색/상세, `{id}/jd`(upsert+Drive), `{id}/jd/recommend` | KEEP |
 | `resumes_router` | `/api/resumes` | `upload-to-drive`, `status`(+Excel), `analyze-posting/selected/all` | KEEP |
-| `jobs_router` | `/api/jobs` | `extract-from-url`, `discover/saramin/didim` | KEEP |
+| `jobs_router` | `/api/jobs` | `extract-from-url`, `discover/saramin/didim`, `discover/jobkorea/didim` (둘 다 `?dry_run`) | KEEP |
 | `drive_router` | `/api/drive` | Drive 연결/폴더 동기화, `dept-config` | INFRA |
 | `departments_router` | `/api/departments` | 부서 트리, Drive→DB 동기화 | INFRA |
 | `db_router` | `/api/db` | health/tables/counts | INFRA |
@@ -405,6 +416,7 @@ resume-auto-analyzer/
 | `CELERY_TASK_DEFAULT_QUEUE` / `CELERY_TIMEZONE` | 큐/타임존 (`job_discovery` / `Asia/Seoul`) |
 | `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` | 사내 Root CA 번들 경로 |
 | `SARAMIN_DIDIM_SEARCH_URL` / `_KEYWORD` / `_COMPANY_NAME` | 사람인 수집 설정 (미설정 시 코드 기본값) |
+| `JOBKOREA_DIDIM_SEARCH_URL` / `_KEYWORD` / `_COMPANY_NAME` | 잡코리아 수집 설정 (미설정 시 코드 기본값) |
 
 ---
 
@@ -509,6 +521,7 @@ docker compose up -d --build
 | Drive 인증 실패 | `token.json` 존재/만료, 재인증 |
 | DB 연결 timeout | `DATABASE_URL`/`DB_HOST`, (Docker) `host.docker.internal` |
 | 사람인 수집 0건 | 검색 결과 JS 렌더링 한계(정적 수집 불가) — Playwright fallback 후속 과제 |
+| 잡코리아 수집 0건 | SSR 이나 사이트 구조 변경 가능 — `parser_missed` 로그 확인 후 파서 갱신 |
 | 외부 API TLS 오류 | 사내 CA 번들(`SSL_CERT_FILE`) 설정 |
 
 ---
@@ -519,3 +532,6 @@ docker compose up -d --build
 - 남은 작업: [`docs/TODO.md`](docs/TODO.md)
 - 단계별 작업 기록: [`docs/work-log/`](docs/work-log/)
 - DB 변경 SQL(참고용): [`docs/sql/`](docs/sql/)
+- **DB 테이블 사용 현황/정리 후보**: [`docs/db-table-usage-analysis.md`](docs/db-table-usage-analysis.md)
+
+> **DB 테이블 정리 상태**: 위 분석 문서는 **제거 후보 리스트업/근거 정리까지만**입니다. 아직 실제 `DROP TABLE`/삭제 마이그레이션은 없습니다(10개 테이블 모두 유지). `job_descriptions`·`dept_drive_folders`(레거시)는 은퇴·승인 후 별도 정리 예정.

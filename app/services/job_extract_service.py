@@ -114,6 +114,20 @@ def _platform_for_host(host: str):
     return None, None
 
 
+def platform_code_for_url(url: str):
+    """공고 URL → platform_code(SARAMIN/JOBKOREA/...). 매핑되는 도메인이 없으면 None(기존 기본값 유지).
+
+    수동 공고 등록/URL 추출/배치가 URL 도메인만 보고 플랫폼을 일관되게 판정하기 위한 단일 진입점입니다.
+    (예: saramin.co.kr→SARAMIN, jobkorea.co.kr→JOBKOREA, 그 외→None)
+    """
+    try:
+        host = urlparse(url or "").hostname
+    except ValueError:
+        return None
+    code, _ = _platform_for_host(host)
+    return code
+
+
 def _assert_safe_url(url: str):
     """scheme/host 검증 + 호스트가 해석되는 모든 IP 가 공인 IP 인지 확인(SSRF 방어). 실패 시 JobExtractError."""
     p = urlparse(url)

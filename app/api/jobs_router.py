@@ -8,6 +8,7 @@ from app.db.models.user import User
 from app.services import job_extract_service, job_posting_discovery_service
 from app.services.job_extract_service import JobExtractError
 from app.services.saramin_job_collect_service import SaraminCollectError
+from app.services.jobkorea_job_collect_service import JobKoreaCollectError
 from app.services.google_drive_service import _log
 from app.schemas.job_posting_schema import JobExtractRequest
 
@@ -55,7 +56,8 @@ def extract_from_url(body: JobExtractRequest,
 
 
 @router.post("/discover/saramin/didim")
-def discover_saramin_didim(current_user: User = Depends(get_current_user),
+def discover_saramin_didim(dry_run: bool = False,
+                           current_user: User = Depends(get_current_user),
                            db: Session = Depends(get_db)):
     """사람인 '디딤' 검색 결과에서 디딤(주) 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
 
@@ -65,12 +67,13 @@ def discover_saramin_didim(current_user: User = Depends(get_current_user),
       실제 상세 URL 분석/JD 저장/Drive 폴더 생성은 **Celery worker** 가 비동기로 수행합니다
       (job_extract_service / job_posting_service 재사용).
     - 공고 하나가 실패해도 나머지는 계속 처리하며, 결과 요약(collected/matched/new/queued/duplicate/failed)을 반환합니다.
+    - dry_run=true 면 실제 insert/큐 적재 없이 수집·중복 판단 결과만 반환합니다(검증용).
     """
     role = (current_user.role_code or "").upper()
     if role not in ("ADMIN", "MANAGER"):
         raise HTTPException(status_code=403, detail="공고 자동 수집 권한이 없습니다.")
     try:
-        return job_posting_discovery_service.discover_saramin_didim(db, current_user)
+        return job_posting_discovery_service.discover_saramin_didim(db, current_user, dry_run=dry_run)
     except SaraminCollectError as e:
         # 검색 페이지 fetch/parse 실패 등 수집 자체 실패. 민감정보는 메시지에 포함하지 않음.
         _log(f"[saramin-discovery] collect error step={e.step} status={e.status_code}")
@@ -85,5 +88,37 @@ def discover_saramin_didim(current_user: User = Depends(get_current_user),
             status_code=500,
             content={"status": "ERROR", "step": "saramin_discovery_failed",
                      "error_message": "사람인 공고 수집 중 오류가 발생했습니다.",
+                     "hint": "잠시 후 다시 시도해주세요."},
+        )
+
+
+@router.post("/discover/jobkorea/didim")
+def discover_jobkorea_didim(dry_run: bool = False,
+                            current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    """잡코리아 '디딤(주)' 검색 결과에서 디딤(주) 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
+
+    사람인과 동일한 등록/큐 로직을 재사용하며 platform_code=JOBKOREA 로 저장됩니다.
+    잡코리아 검색 결과는 서버 렌더링(SSR)이라 정적 HTML 로 수집합니다(Playwright 미사용).
+    dry_run=true 면 실제 insert/큐 적재 없이 수집·중복 판단 결과만 반환합니다(검증용).
+    """
+    role = (current_user.role_code or "").upper()
+    if role not in ("ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="공고 자동 수집 권한이 없습니다.")
+    try:
+        return job_posting_discovery_service.discover_jobkorea_didim(db, current_user, dry_run=dry_run)
+    except JobKoreaCollectError as e:
+        _log(f"[jobkorea-discovery] collect error step={e.step} status={e.status_code}")
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"status": "ERROR", "step": e.step,
+                     "error_message": e.message, "hint": e.hint},
+        )
+    except Exception as e:
+        _log(f"[jobkorea-discovery] unexpected error type={type(e).__name__}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "ERROR", "step": "jobkorea_discovery_failed",
+                     "error_message": "잡코리아 공고 수집 중 오류가 발생했습니다.",
                      "hint": "잠시 후 다시 시도해주세요."},
         )

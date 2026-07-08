@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     SARAMIN_DIDIM_COMPANY_NAME: str = "디딤(주)"
     SARAMIN_DISCOVERY_ENABLED: bool = False   # 스케줄러 자동 실행 여부(현재 주석 처리 상태 — 참고용 플래그)
 
+    # 잡코리아 '디딤(주)' 검색 결과에서 디딤(주) 신규 공고를 수집하는 배치 설정(사람인과 동일 구조).
+    # 검색 결과는 서버 렌더링(SSR)이라 정적 HTML 로 수집 가능. 실제 1시간 주기 등록은 코드상 주석 처리 — 운영 반영 시 해제.
+    JOBKOREA_DIDIM_SEARCH_URL: str = (
+        "https://www.jobkorea.co.kr/Search/?stext=%EB%94%94%EB%94%A4%28%EC%A3%BC%29"
+    )
+    JOBKOREA_DIDIM_KEYWORD: str = "디딤(주)"
+    JOBKOREA_DIDIM_COMPANY_NAME: str = "디딤(주)"
+    JOBKOREA_DISCOVERY_ENABLED: bool = False   # 스케줄러 자동 실행 여부(현재 주석 처리 상태 — 참고용 플래그)
+
     # Celery / Redis (비동기 작업 큐). 실제 URL/비밀번호는 .env 에서만 읽습니다(하드코딩 금지).
     # Docker Compose 내부에서는 broker 를 redis 서비스명(redis://redis:6379/...)으로, 로컬 직접 실행은 localhost 로.
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"

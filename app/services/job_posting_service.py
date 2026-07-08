@@ -91,6 +91,20 @@ def _jd_dict(jd: JobPostingJD) -> dict:
     }
 
 
+def _auto_platform_code(platform_code, url):
+    """platform_code 미지정 시 공고 URL 도메인으로 자동 매핑(SARAMIN/JOBKOREA 등).
+
+    - 이미 platform_code 가 있으면 사용자가 고른 값을 그대로 존중합니다(덮어쓰지 않음).
+    - URL 도메인이 지원 플랫폼(VALID_PLATFORM)으로 매핑될 때만 채웁니다. 그 외(점핏 등 미지원/알 수 없는
+      도메인)는 기존 기본값(None)을 유지합니다 — platform_code 가 null 로 들어가도 오류를 내지 않습니다.
+    """
+    if platform_code or not url:
+        return platform_code
+    from app.services import job_extract_service   # lazy: import-time 순환 방지
+    derived = job_extract_service.platform_code_for_url(url)
+    return derived if derived in VALID_PLATFORM else platform_code
+
+
 def _validate_posting_fields(db: Session, department_id, platform_code, status):
     if platform_code and platform_code not in VALID_PLATFORM:
         raise HTTPException(status_code=400, detail="플랫폼 값이 올바르지 않습니다.")
@@ -192,10 +206,12 @@ def create_posting(db: Session, user, data) -> dict:
     _ensure_can_manage(db, user, dept_id)
     _validate_posting_fields(db, dept_id, data.platform_code, data.status)
     now = datetime.now()
+    url = (data.platform_posting_url or "").strip() or None
+    platform_code = _auto_platform_code((data.platform_code or "").strip() or None, url)
     p = JobPosting(
         title=title, department_id=dept_id,
-        platform_code=data.platform_code or None,
-        platform_posting_url=data.platform_posting_url or None,
+        platform_code=platform_code,
+        platform_posting_url=url,
         status=(data.status or "OPEN"),
         created_by=user.id, updated_at=now,
     )
@@ -282,6 +298,8 @@ def update_posting(db: Session, user, posting_id: int, data) -> dict:
         p.platform_code = fields["platform_code"] or None
     if "platform_posting_url" in fields:
         p.platform_posting_url = fields["platform_posting_url"] or None
+    # platform_code 가 비어 있고 URL 이 있으면 도메인으로 자동 매핑(사용자가 고른 값은 덮지 않음)
+    p.platform_code = _auto_platform_code(p.platform_code, (p.platform_posting_url or "").strip() or None)
     if "status" in fields and fields["status"]:
         p.status = fields["status"]
     p.updated_at = datetime.now()

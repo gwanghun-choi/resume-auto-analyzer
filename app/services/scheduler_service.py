@@ -39,6 +39,23 @@ def run_saramin_didim_discovery():
         db.close()
 
 
+def run_jobkorea_didim_discovery():
+    """스케줄러/배치 진입점(잡코리아). 사람인과 동일 구조 — 시스템 ADMIN 권한으로 수집·등록합니다.
+    배치가 실패해도 예외를 전파하지 않습니다(로그만 남김). 반환: 요약 dict 또는 None."""
+    db = SessionLocal()
+    try:
+        user = _resolve_system_user(db)
+        if not user:
+            _log("[jobkorea-discovery] 활성 ADMIN 계정이 없어 배치를 건너뜁니다.")
+            return None
+        return job_posting_discovery_service.discover_jobkorea_didim(db, user)
+    except Exception as e:
+        _log(f"[jobkorea-discovery] 배치 실패: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
 # =============================================================================
 # 1시간 주기 자동 실행 (운영 반영 시 주석 해제)
 #
@@ -66,6 +83,15 @@ def run_saramin_didim_discovery():
 #         replace_existing=True,
 #         max_instances=1,   # 이전 실행이 안 끝났으면 겹쳐 실행하지 않음
 #         coalesce=True,     # 밀린 실행은 한 번으로 합침
+#     )
+#     _scheduler.add_job(
+#         run_jobkorea_didim_discovery,
+#         "interval",
+#         hours=1,
+#         id="discover_jobkorea_didim_jobs",
+#         replace_existing=True,
+#         max_instances=1,
+#         coalesce=True,
 #     )
 #     _scheduler.start()
 #     return _scheduler
