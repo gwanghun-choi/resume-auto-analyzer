@@ -172,7 +172,6 @@ erDiagram
 | `departments` | Drive dept_config 동기화 부서 트리 |
 | `job_postings` | **채용 단위(공고)** |
 | `job_posting_jds` | 공고 active JD (현행) |
-| `job_descriptions` | 부서별 JD **(LEGACY, 미사용)** |
 | `dept_drive_folders` | 부서별 Drive 폴더 매핑 |
 | `resume_upload_batches` | 업로드 1회 = 1 회차(batch) |
 | `resume_files` | 분석 대상 파일 1건 = 지원자 1명 |
