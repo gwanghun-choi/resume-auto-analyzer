@@ -11,7 +11,7 @@ from app.services import (
 from app.services.google_drive_service import _log
 from app.tasks.job_posting_tasks import analyze_job_posting_jd_task
 
-# 채용 플랫폼(사람인/잡코리아) 검색 결과에서 찾은 디딤(주) 공고 중 '신규' 만 골라 job_postings 에 등록하고,
+# 채용 플랫폼(사람인/잡코리아) 검색 결과에서 찾은 대상 회사 공고 중 '신규' 만 골라 job_postings 에 등록하고,
 # JD 분석 작업(상세 URL 분석 + JD 저장 + Drive 폴더)은 Celery worker 로 넘깁니다(비동기).
 #
 # 정책:
@@ -118,7 +118,7 @@ def _discover(db: Session, user, platform_code: str, collected: dict,
     (사람인/잡코리아 공통 코어. 수집기별 진입 함수가 collected 를 넘겨 재사용합니다.)"""
     items = collected["items"]
     _log(f"[{platform_code.lower()}-discovery] start search_url={collected['search_url']} "
-         f"collected={collected['collected_count']} matched_didim={len(items)} dry_run={dry_run}")
+         f"collected={collected['collected_count']} matched_target={len(items)} dry_run={dry_run}")
 
     if dry_run:
         dr_items = _dry_run_items(db, platform_code, items)
@@ -179,24 +179,24 @@ def _discover(db: Session, user, platform_code: str, collected: dict,
     return summary
 
 
-def discover_saramin_didim(db: Session, user, search_url: str = None, dry_run: bool = False) -> dict:
-    """사람인 '디딤' 검색 → 디딤(주) 신규 공고 insert + JD 분석 task enqueue(수동 API/스케줄러 공통 진입점).
+def discover_saramin(db: Session, user, search_url: str = None, dry_run: bool = False) -> dict:
+    """사람인 검색 → 대상 회사 신규 공고 insert + JD 분석 task enqueue(수동 API/스케줄러 공통 진입점).
 
     반환: 처리 결과 요약(collected/matched/new/queued/duplicate/failed 카운트 + 항목별 상태).
     수집 자체 실패(SaraminCollectError)는 호출측으로 전파, 공고 단위 실패는 격리해 카운트만 집계.
     dry_run=True 면 실제 insert/enqueue 없이 수집·중복 판단 결과만 반환합니다.
     """
-    collected = saramin_job_collect_service.collect_didim_postings(search_url)
+    collected = saramin_job_collect_service.collect_target_postings(search_url)
     return _discover(db, user, "SARAMIN", collected,
-                     settings.SARAMIN_DIDIM_KEYWORD, settings.SARAMIN_DIDIM_COMPANY_NAME, dry_run)
+                     settings.SARAMIN_SEARCH_KEYWORD, settings.TARGET_COMPANY_NAME, dry_run)
 
 
-def discover_jobkorea_didim(db: Session, user, search_url: str = None, dry_run: bool = False) -> dict:
-    """잡코리아 '디딤(주)' 검색 → 디딤(주) 신규 공고 insert + JD 분석 task enqueue(수동 API/스케줄러 공통 진입점).
+def discover_jobkorea(db: Session, user, search_url: str = None, dry_run: bool = False) -> dict:
+    """잡코리아 검색 → 대상 회사 신규 공고 insert + JD 분석 task enqueue(수동 API/스케줄러 공통 진입점).
 
     사람인과 동일한 등록/큐 로직(_register_one)을 재사용합니다. platform_code=JOBKOREA 로 저장됩니다.
     dry_run=True 면 실제 insert/enqueue 없이 수집·중복 판단 결과만 반환합니다.
     """
-    collected = jobkorea_job_collect_service.collect_didim_postings(search_url)
+    collected = jobkorea_job_collect_service.collect_target_postings(search_url)
     return _discover(db, user, "JOBKOREA", collected,
-                     settings.JOBKOREA_DIDIM_KEYWORD, settings.JOBKOREA_DIDIM_COMPANY_NAME, dry_run)
+                     settings.JOBKOREA_SEARCH_KEYWORD, settings.TARGET_COMPANY_NAME, dry_run)

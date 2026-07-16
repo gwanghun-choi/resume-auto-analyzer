@@ -23,8 +23,8 @@
 ## 5. 신규 처리 흐름
 
 ```
-[수동 API POST /api/jobs/discover/saramin/didim 또는 Scheduler(주석)]
- saramin 수집 → 디딤(주) 필터 → detail_url(rec_idx) 중복 확인
+[수동 API POST /api/jobs/discover/saramin 또는 Scheduler(주석)]
+ saramin 수집 → 대상 회사 필터 → detail_url(rec_idx) 중복 확인
  → 신규만 job_posting_service.create_posting(status=DRAFT)
  → mark_jd_lifecycle_status(JD_QUEUED)          # enqueue 전에 기록(race 방지)
  → analyze_job_posting_jd_task.delay(posting_id, requested_by_user_id)
@@ -73,7 +73,7 @@
 ## 8. 수동 실행 방법
 
 ```bash
-POST /api/jobs/discover/saramin/didim        # 권한: ADMIN/MANAGER
+POST /api/jobs/discover/saramin        # 권한: ADMIN/MANAGER
 ```
 응답: `collected_count / matched_company_count / new_count / queued_count / skipped_duplicate_count / failed_count / items[{posting_id,title,detail_url,status:"JD_QUEUED"}]`.
 

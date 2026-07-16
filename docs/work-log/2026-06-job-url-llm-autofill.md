@@ -1,10 +1,10 @@
 # 공고 URL 기반 LLM 자동 채우기 + JD 라벨 변경
 
 - **작업 일시**: 2026-06-12
-- **작업 목적**: ① 공고 모달 JD 필드 라벨을 회사 공고 양식에 맞게 변경(UI만), ② 플랫폼 공고 URL 페이지를 가져와 LLM 으로 공고명/플랫폼/주요업무/자격요건/우대사항을 추출해 **비어 있는 입력값만 자동 채우기**(저장은 사용자가 직접). 부서/팀은 자동 입력 제외, 디딤(주) 공고만 동작.
+- **작업 목적**: ① 공고 모달 JD 필드 라벨을 회사 공고 양식에 맞게 변경(UI만), ② 플랫폼 공고 URL 페이지를 가져와 LLM 으로 공고명/플랫폼/주요업무/자격요건/우대사항을 추출해 **비어 있는 입력값만 자동 채우기**(저장은 사용자가 직접). 부서/팀은 자동 입력 제외, 대상 회사 공고만 동작.
 
 ## 변경 파일
-- (신규) `app/services/job_extract_service.py` — URL 검증/SSRF 방어/HTML→text/디딤(주) 검증/LLM 추출.
+- (신규) `app/services/job_extract_service.py` — URL 검증/SSRF 방어/HTML→text/대상 회사 검증/LLM 추출.
 - (신규) `app/api/jobs_router.py` — `POST /api/jobs/extract-from-url`.
 - `app/schemas/job_posting_schema.py` — `JobExtractRequest{url}`.
 - `app/main.py` — `jobs_router` 등록.
@@ -26,7 +26,7 @@
 3. **SSRF 방어**: 호스트 DNS 해석 IP 전수 검사 → private/loopback/link-local(169.254.169.254)/reserved/multicast/unspecified(0.0.0.0)/127.0.0.1/localhost 차단(`ssrf_blocked`). 리다이렉트도 매 hop 재검증(`_SafeRedirectHandler`).
 4. HTML 조회(2MB 제한, 10s timeout, content-type html/text/xml 만).
 5. script/style/noscript 제거 → 태그 제거 → `html.unescape` → 공백 정리(plain text).
-6. **디딤(주) 1차 검증**: 텍스트/원본 HTML 에 `디딤(주)/(주)디딤/주식회사 디딤/디딤` 포함 여부. 미확인 시 **LLM 미호출**, `company_verified=false` + warning 반환(입력값 미변경).
+6. **대상 회사 1차 검증**: 텍스트/원본 HTML 에 `TARGET_COMPANY_KEYWORDS` 포함 여부. 미확인 시 **LLM 미호출**, `company_verified=false` + warning 반환(입력값 미변경).
 7. 확인 시 LLM(`call_openai_json`)으로 job_title/main_tasks/qualifications/preferred 추출(최대 15000자 입력). 부서 관련 값은 프롬프트에서 추출 금지.
 8. platform 은 URL 도메인 기준(saramin→사람인, jobkorea→잡코리아, wanted→원티드, 그 외 null).
 
@@ -43,7 +43,7 @@
 
 ## 테스트 방법
 ```
-cd /mnt/d/workspace_ref/langgraph-gemini-resume-demo
+cd <프로젝트 루트>
 uv run uvicorn app.main:app --reload
 # http://localhost:8000 → 공고/JD 관리 → 공고 등록 팝업 → URL 입력 → [공고 내용 가져오기]
 curl -X POST "http://localhost:8000/api/jobs/extract-from-url" -H "Content-Type: application/json" -d '{"url":"https://example.com/job"}'
@@ -53,9 +53,9 @@ curl -X POST "http://localhost:8000/api/jobs/extract-from-url" -H "Content-Type:
 - 라우트 등록 확인, `py_compile`/`node --check` 통과.
 - SSRF: localhost/127.0.0.1/169.254.169.254/0.0.0.0/ftp:// 차단 확인, 공개 URL 허용.
 - 플랫폼 매핑: saramin→사람인, jumpit→None(미존재 → 채우지 않음).
-- HTML→text: script/style 제거 + 디딤(주) 키워드 검출.
-- **라이브 fetch**: `example.com`(비-디딤) → fetch+parse 후 `company_verified=false` + warning, 필드 빈값, LLM 미호출. 사설 URL extract 호출 시 ssrf_blocked.
-- (참고) 디딤(주) 실제 공고 URL 의 LLM 추출 결과는 서버 기동 + 브라우저 v47 새로고침 후 사용자 확인 필요.
+- HTML→text: script/style 제거 + 대상 회사 키워드 검출.
+- **라이브 fetch**: `example.com`(대상 회사 아님) → fetch+parse 후 `company_verified=false` + warning, 필드 빈값, LLM 미호출. 사설 URL extract 호출 시 ssrf_blocked.
+- (참고) 대상 회사 실제 공고 URL 의 LLM 추출 결과는 서버 기동 + 브라우저 v47 새로고침 후 사용자 확인 필요.
 
 ## 남은 이슈 / TODO (docs/TODO.md)
 - 자격요건/우대사항이 현재 required_skills/preferred_skills(스킬 배열, 콤마/줄바꿈 split)에 bullet 문자열로 저장됨 → JD 필드/DB 컬럼 정식 리팩토링 시 free-text 분리 검토.

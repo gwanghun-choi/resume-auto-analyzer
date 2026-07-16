@@ -71,7 +71,7 @@ def analyze_job_posting_jd_task(self, posting_id: int, requested_by_user_id: int
 
         job_posting_service.mark_jd_lifecycle_status(db, posting_id, "JD_PROCESSING")
 
-        # 1) 상세 URL 분석 — 기존 로직 재사용 (디딤(주) 재검증 + LLM JD 구조화)
+        # 1) 상세 URL 분석 — 기존 로직 재사용 (대상 회사 재검증 + LLM JD 구조화)
         try:
             extract = job_extract_service.extract_from_url(detail_url)
         except JobExtractError as e:

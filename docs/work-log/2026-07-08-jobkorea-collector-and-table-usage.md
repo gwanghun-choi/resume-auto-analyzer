@@ -2,7 +2,7 @@
 
 ## 1. 작업 목표
 
-1. 사람인 배치에 더해 **잡코리아(JobKorea) 신규 공고 수집 배치** 추가(디딤(주) 필터, 공고 중심 플로우).
+1. 사람인 배치에 더해 **잡코리아(JobKorea) 신규 공고 수집 배치** 추가(대상 회사 필터, 공고 중심 플로우).
 2. URL 도메인 → **platform_code 자동 매핑**(saramin→SARAMIN, jobkorea→JOBKOREA, 그 외→기존 기본값) 구현/확인.
 3. 현재 소스코드 기준 **안 쓰는 테이블 제거 후보 리스트업**(삭제 없이 문서화만).
 
@@ -11,24 +11,24 @@
 ## 2. 변경 파일
 
 **신규**
-- `app/services/jobkorea_job_collect_service.py` — 잡코리아 검색 결과 정적(SSR) 수집기. 사람인 수집기와 동일 스타일. 회사명 필터는 사람인의 `is_didim_company` 재사용(잡코리아 `㈜`(U+321C) 합자만 `(주)`로 치환 후 위임).
+- `app/services/jobkorea_job_collect_service.py` — 잡코리아 검색 결과 정적(SSR) 수집기. 사람인 수집기와 동일 스타일. 회사명 필터는 사람인의 `is_target_company` 재사용(잡코리아 `㈜`(U+321C) 합자만 `(주)`로 치환 후 위임).
 - `docs/db-table-usage-analysis.md` — 테이블 사용 현황/제거 후보 분석.
 - `tests/test_job_collectors.py` — pytest 미도입이라 plain-assert 실행 스크립트(`uv run python tests/test_job_collectors.py`).
 - 본 work-log.
 
 **수정**
-- `app/services/job_posting_discovery_service.py` — 사람인 전용 → **플랫폼 공통 코어(`_discover`)로 일반화**. `discover_saramin_didim`/`discover_jobkorea_didim` 은 얇은 wrapper. `_register_one`/`_find_existing` 에 `platform_code` 인자 추가(플랫폼별 중복 스코프). **dry-run**(`_dry_run_items`) 추가.
+- `app/services/job_posting_discovery_service.py` — 사람인 전용 → **플랫폼 공통 코어(`_discover`)로 일반화**. `discover_saramin`/`discover_jobkorea` 은 얇은 wrapper. `_register_one`/`_find_existing` 에 `platform_code` 인자 추가(플랫폼별 중복 스코프). **dry-run**(`_dry_run_items`) 추가.
 - `app/services/job_extract_service.py` — 공개 함수 `platform_code_for_url(url)` 추가(기존 `_platform_for_host` 재사용).
 - `app/services/job_posting_service.py` — `_auto_platform_code()` 추가. `create_posting`/`update_posting` 에서 platform_code 미지정 + URL 존재 시 도메인으로 자동 채움(사용자가 고른 값은 덮지 않음, 미지원 도메인은 None 유지).
-- `app/api/jobs_router.py` — `POST /api/jobs/discover/jobkorea/didim` 추가, 사람인/잡코리아 둘 다 `dry_run` 쿼리 파라미터 추가.
-- `app/services/scheduler_service.py` — `run_jobkorea_didim_discovery()` 추가 + 주석 등록 블록에 잡코리아 job 추가(**실제 등록은 주석 유지**).
-- `app/core/config.py` — `JOBKOREA_DIDIM_SEARCH_URL`/`_KEYWORD`/`_COMPANY_NAME`/`JOBKOREA_DISCOVERY_ENABLED`.
+- `app/api/jobs_router.py` — `POST /api/jobs/discover/jobkorea` 추가, 사람인/잡코리아 둘 다 `dry_run` 쿼리 파라미터 추가.
+- `app/services/scheduler_service.py` — `run_jobkorea_discovery()` 추가 + 주석 등록 블록에 잡코리아 job 추가(**실제 등록은 주석 유지**).
+- `app/core/config.py` — `JOBKOREA_SEARCH_URL`/`_KEYWORD`/`_COMPANY_NAME`/`JOBKOREA_DISCOVERY_ENABLED`.
 - 문서: `docs/TODO.md`, `docs/WORKFLOW.md`, `README.md`, `.env.example`.
 
 ## 3. 잡코리아 수집 로직
 
-- **검색 URL**: `https://www.jobkorea.co.kr/Search/?stext=%EB%94%94%EB%94%A4%28%EC%A3%BC%29` (디딤(주)).
-- **회사명 필터**: 사람인과 동일 기준 재사용 — normalize(공백 제거) 후 `{"디딤(주)","디딤주식회사"}` exact 만 통과. 잡코리아 표기 `디딤㈜` 는 `㈜→(주)` 치환 후 매칭. 제외: `㈜디딤커뮤니케이션`/`디딤정신건강의학과의원`/`서울이주여성디딤터`/`디딤돌미술학원` 등.
+- **검색 URL**: `https://www.jobkorea.co.kr/Search/?stext=<회사명 URL 인코딩>` (대상 회사).
+- **회사명 필터**: 사람인과 동일 기준 재사용 — normalize(공백 제거) 후 `TARGET_COMPANY_NAMES` 목록과 exact 만 통과. 잡코리아 표기 `샘플㈜` 는 `㈜→(주)` 치환 후 매칭. 제외: `㈜샘플커뮤니케이션`/`샘플의원`/`샘플터`/`샘플돌학원` 등.
 - **detail_url 추출**: 검색 결과가 **서버 렌더링(SSR)** — 제목 앵커(`data-sentry-component="Title"`)의 `href=".../Recruit/GI_Read/{gno}?..."` 에서 공고 고유 id(`gno`, GI_No)와 제목 span 을 잡고, 같은 gno 의 회사 앵커 span 에서 회사명을 결속.
 - **normalized URL 생성**: tracking(`Oem_Code`/`logpath`/`stext`/`listno`/`sc`) 제거하고 gno 로 재구성 → `https://www.jobkorea.co.kr/Recruit/GI_Read/{gno}` (canonical). 상대경로도 gno 기준으로 항상 절대 canonical 이 되어, tracking 만 다른 같은 공고는 같은 URL.
 - **중복 판단**: 1순위 `platform_code=JOBKOREA` + gno(`GI_Read/{gno}` 부분일치, 과거 tracking 저장분 포함), 2순위 normalized_url 정확일치. `platform_posting_url` 컬럼 재사용(**external_id 컬럼 미추가**). 플랫폼 스코프로 사람인 rec_idx 와 충돌 방지.
@@ -60,13 +60,13 @@
 ## 6. 검증 결과
 
 - **단위 테스트** `uv run python tests/test_job_collectors.py` → **ALL PASSED**(platform 매핑 6, URL normalize 3, 회사명 필터 9, 파서 fixture 8, dry-run shape 4).
-- **라이브 파서(read-only)**: 실제 검색 URL fetch → cards=20, `parser_missed=0`, 디딤(주) matched=**12**(디딤㈜ 12건, 유사명 8건 제외). **DB insert/enqueue 없음.**
+- **라이브 파서(read-only)**: 실제 검색 URL fetch → cards=20, `parser_missed=0`, 대상 회사 matched=**12**(대상 회사 12건, 유사명 8건 제외). **DB insert/enqueue 없음.**
 - **DB 통합(일회용 Postgres, 운영 DB 아님)**:
   - `alembic upgrade head`(빈 DB) → 10 테이블 생성.
   - `create_posting` 자동 매핑: 잡코리아 URL→JOBKOREA / 사람인→SARAMIN / example.com→None / jumpit→None / (명시 WANTED + 잡코리아 URL)→WANTED(존중).
   - `_find_existing`: tracking 붙은 raw URL 저장분도 gno 로 중복 검출, 플랫폼 스코프로 cross-platform 오탐 없음.
   - dry-run: insert/enqueue 0, 중복/신규 판정 정확(이미 insert 한 gno 만 is_duplicate=true), 항목 shape(platform_code/company_name/title/raw_url/normalized_url/is_duplicate/skip_reason) 확인.
-  - **사람인 회귀**: 공통 코어 일반화 후에도 `discover_saramin_didim` dry-run 정상(source=SARAMIN, normalized rec_idx URL).
+  - **사람인 회귀**: 공통 코어 일반화 후에도 `discover_saramin` dry-run 정상(source=SARAMIN, normalized rec_idx URL).
 - 운영 DB(원격)에는 **읽기/쓰기 모두 수행하지 않음**(검증은 전부 일회용 컨테이너).
 
 ## 7. 주의사항

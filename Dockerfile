@@ -16,8 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 회사 Root CA 인증서 등록
-COPY certs/company-root-ca.crt /usr/local/share/ca-certificates/company-root-ca.crt
+# 사설 Root CA 등록(선택). SSL inspection 이 있는 사내망에서만 필요합니다.
+# certs/ 에 .crt 를 두면 시스템 신뢰 번들에 병합되고, 없으면 공개 CA 만 사용합니다.
+# (certs/.gitkeep 덕분에 디렉토리가 비어 있어도 COPY 가 실패하지 않습니다. 실제 인증서는 커밋하지 마세요.)
+COPY certs/ /usr/local/share/ca-certificates/
 
 RUN update-ca-certificates
 

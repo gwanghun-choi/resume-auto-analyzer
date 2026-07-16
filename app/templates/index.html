@@ -77,9 +77,10 @@
                         <li class="menu-item" data-view="todo" data-todo="admin_roles">권한 관리</li>
                         <li class="menu-item" data-view="todo" data-todo="admin_audit">감사 로그</li>
                         <li class="menu-item" data-view="todo" data-todo="admin_settings">시스템 설정</li>
-                        <li class="menu-item"
-                            data-external="https://drive.google.com/drive/u/3/folders/1glf9SoPIKPM7_2T7cKZm74terHv06O6E">
+                        {% if drive_shortcut_url %}
+                        <li class="menu-item" data-external="{{ drive_shortcut_url }}">
                             Drive 바로가기 <span class="ext-icon">↗</span></li>
+                        {% endif %}
                     </ul>
                 </div>
             </nav>

@@ -49,7 +49,7 @@ uv run uvicorn app.main:app --reload   # http://localhost:8000 (브라우저 하
 ```
 - `py_compile`/`node --check`/CSS 균형 통과.
 - **HTML 추출**: 사람인류 구조(div/표/ul) 모사 → "주요 업무/자격요건/우대사항" 각각 줄 분리, 표 셀 `|` 보존, script 제거 확인. 프롬프트에 동의어(담당업무/자격조건/우대조건) 포함 확인.
-- **회귀**: extract 파이프라인 정상(비-디딤 → company_verified=false, LLM 미호출), posting-pending view 형태(total/files) 정상.
+- **회귀**: extract 파이프라인 정상(대상 회사 아님 → company_verified=false, LLM 미호출), posting-pending view 형태(total/files) 정상.
 - 직전 E2E: 공고+JD 통합 저장 시 `job_posting_jds`에 JSONB 배열+jd_content 저장, has_jd 반영, 수정 시 active 1건 유지.
 
 ## 남은 이슈 / 한계

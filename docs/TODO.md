@@ -78,7 +78,7 @@
 
 ### J. 배포 / 운영
 
-- [ ] `deploy.sh`(압축→전송→원격 해제→compose up), compose 운영 명령 정리, DB 백업/복구(pg_dump), 로그 로테이션/수집, NCP ACG/방화벽, 장애 대응 순서. 추후 Git/GHCR/Jenkins/ArgoCD(CI/CD) 검토.
+- [ ] `deploy.sh`(압축→전송→원격 해제→compose up), compose 운영 명령 정리, DB 백업/복구(pg_dump), 로그 로테이션/수집, 방화벽/보안그룹, 장애 대응 순서. 추후 컨테이너 레지스트리/CI·CD 파이프라인 검토.
 - [ ] 향후 권한 기반 플로우(역할별 메뉴/기능 노출) — WORKFLOW 7장 초안(미구현).
 
 ---
@@ -91,7 +91,7 @@
 - [x] **2026-07-07 — 공고 중심 플로우 확정 + 레거시 LEGACY 표시**: 공고 중심을 공식 주력으로 확정, 부서 중심 경로 `LEGACY` 주석(삭제 안 함). · [work-log](work-log/2026-07-07-job-posting-flow-consolidation.md)
 - [x] **2026-07-07 — Celery/Redis 2차(이력서 분석 비동기)**: `resume_analysis` 큐, `analyze-posting/selected/all` enqueue, 중복 가드, 파일 단위 격리. · [work-log](work-log/2026-07-07-celery-resume-analysis-phase2.md)
 - [x] **2026-07-07 — Celery/Redis 1차(공고 JD 분석 비동기)**: `job_discovery` 큐, `analyze_job_posting_jd_task`, JD 생명주기 상태(JD_QUEUED→READY/FAILED). · [work-log](work-log/2026-07-07-celery-redis-job-posting-jd-analysis.md)
-- [x] **2026-07-07 — 사람인 디딤(주) 수집 배치 + 파서 fallback**: 정적 수집기/회사명 필터/중복 판단, 파서 1·2·3차 견고화. · [batch](work-log/2026-07-07-saramin-job-discovery-batch.md) · [fallback](work-log/2026-07-07-saramin-url-collector-fallback.md)
+- [x] **2026-07-07 — 사람인 대상 회사 수집 배치 + 파서 fallback**: 정적 수집기/회사명 필터/중복 판단, 파서 1·2·3차 견고화. · [batch](work-log/2026-07-07-saramin-job-discovery-batch.md) · [fallback](work-log/2026-07-07-saramin-url-collector-fallback.md)
 - [x] **2026-07-07 — Alembic 마이그레이션 정리**: 수동 SQL/users DDL 편입(0002~0005), 빈 DB `upgrade head` 일원화, ORM drift 보정. · [work-log](work-log/2026-07-07-alembic-schema-sync.md)
 - [x] **2026-06-15 — 공고명/JD명 추출 우선순위**(모집분야 → 공고 상단 제목 `og:title`/`<title>`). · [work-log](work-log/step-06-job-title-extraction-priority-fix.md)
 - [x] **2026-06-12 — 공고/JD 중심 구조·UI 전환(Step01~07)**: DB SQL 적용, 공고 Drive 폴더 정책(JD 저장 시점 생성, 부서 폴더 제거), 공고+JD 통합 폼/부서 선택사항, URL LLM 자동채우기(JD 포함), 사람인 상세 iframe fallback, 목록 페이징/필터, 분석 작업 관리 3컬럼, legacy `job_descriptions` 카드 제거 등. · [work-log 2026-06-*](work-log/)

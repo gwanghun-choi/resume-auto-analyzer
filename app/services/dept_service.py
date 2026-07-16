@@ -8,8 +8,8 @@ from app.data.dummy_dept_loader import load_depts
 #
 # DeptService 는 부서 목록을 제공하는 서비스입니다. (Spring 의 @Service 와 동일 역할)
 #
-# 지금은 export JSON 파일(data/dummy/dept_202606051611.json)을 읽어서 돌려주지만,
-# 나중에 이 클래스 내부만 그룹웨어 API 호출로 바꾸면
+# 지금은 부서 JSON 파일(data/dummy/departments.sample.json)을 읽어서 돌려주지만,
+# 나중에 이 클래스 내부만 조직도 API 호출로 바꾸면
 # 라우터/화면은 손대지 않아도 되도록 분리해 두었습니다.
 
 class DeptService:

@@ -27,14 +27,14 @@
 - **덮어쓰기 정책**: 대상(공고명/플랫폼/주요업무/자격요건/우대사항) 중 값이 하나라도 있으면 **API 호출 전 confirm**("이미 입력된 공고/JD 내용이 있습니다. 가져온 공고 내용으로 덮어쓸까요?"). 취소→화면 값 유지(API 미호출). 확인→교체. 모두 비어 있으면 confirm 없이 진행. **부서/팀·상태는 절대 변경 안 함.** 빈 추출값은 기존 값 유지.
 
 ## URL 처리 흐름 / 권한 / SSRF (기존 유지)
-- 권한 ADMIN/MANAGER(VIEWER 403) — URL 조회/LLM 호출 전. SSRF 방어(http(s) 외·localhost·127.0.0.1·0.0.0.0·169.254.169.254·사설/예약 IP 차단, 리다이렉트 hop 재검증). 디딤(주) 미확인 시 LLM 미호출 + company_verified=false. platform 은 URL 도메인 기준(LLM 아님). 새 라이브러리 미추가(stdlib + 기존 OpenAI 서비스).
+- 권한 ADMIN/MANAGER(VIEWER 403) — URL 조회/LLM 호출 전. SSRF 방어(http(s) 외·localhost·127.0.0.1·0.0.0.0·169.254.169.254·사설/예약 IP 차단, 리다이렉트 hop 재검증). 대상 회사 미확인 시 LLM 미호출 + company_verified=false. platform 은 URL 도메인 기준(LLM 아님). 새 라이브러리 미추가(stdlib + 기존 OpenAI 서비스).
 
 ## 테스트 방법
 ```
-cd /mnt/d/workspace_ref/langgraph-gemini-resume-demo
+cd <프로젝트 루트>
 uv run uvicorn app.main:app --reload     # http://localhost:8000
 ```
-공고/JD 관리 → 공고 등록 → (JD 카드 처음부터 보임/버튼 "공고 등록" 하나) → 부서 미선택 저장 가능 → URL 입력 후 [공고 내용 가져오기](디딤 공고면 JD까지 채움/플랫폼 자동선택, 값 있으면 confirm) → 공고 등록 클릭(공고+JD 함께 저장).
+공고/JD 관리 → 공고 등록 → (JD 카드 처음부터 보임/버튼 "공고 등록" 하나) → 부서 미선택 저장 가능 → URL 입력 후 [공고 내용 가져오기](대상 회사 공고면 JD까지 채움/플랫폼 자동선택, 값 있으면 confirm) → 공고 등록 클릭(공고+JD 함께 저장).
 ```
 SELECT id, posting_id, title, required_skills, preferred_skills FROM resume_ai.job_descriptions ORDER BY id DESC LIMIT 10;  -- (legacy) 현재 JD 는 resume_ai.job_posting_jds
 SELECT id, posting_id, title, required_skills, preferred_skills FROM resume_ai.job_posting_jds ORDER BY id DESC LIMIT 10;
@@ -45,7 +45,7 @@ SELECT id, posting_id, title, required_skills, preferred_skills FROM resume_ai.j
 - DB: `department_id` nullable 적용 확인.
 - 플랫폼 매핑: saramin→(SARAMIN,사람인), jumpit→(JUMPIT,점핏), unknown→(None,None). `_clean_bullets("- A\n- B\n\n  - C ")`→`"A\nB\nC"`.
 - **E2E**: 부서 미지정 공고 등록(department_id=None) → JD 저장 시 `required_skills` JSONB **list** 저장 + 공고 Drive 폴더 생성 → list 에 JD 등록 완료 반영. (테스트 데이터/Drive 폴더 정리)
-- (참고) 디딤 실제 공고 LLM 추출/화면 동작은 서버 기동 + 브라우저 v48 새로고침 후 사용자 확인 필요.
+- (참고) 대상 회사 실제 공고 LLM 추출/화면 동작은 서버 기동 + 브라우저 v48 새로고침 후 사용자 확인 필요.
 
 ## 남은 이슈 / TODO (docs/TODO.md)
 - 부서 미지정 공고의 이력서 업로드(resume_files.dept_id NOT NULL) 처리 정책.

@@ -11,8 +11,8 @@
 
 **현재 공식 주력 플로우는 공고(job posting) 중심**입니다. 신규 기능/배치/분석은 모두 이 흐름만 사용합니다.
 
-1. **공고 등록** 또는 **채용 플랫폼 신규 공고 자동 수집**(사람인·잡코리아 디딤(주) 배치) → `job_postings`
-2. **공고 상세 URL 분석** → `job_extract_service`(디딤(주) 검증 + LLM JD 구조화)
+1. **공고 등록** 또는 **채용 플랫폼 신규 공고 자동 수집**(사람인·잡코리아 대상 회사 배치) → `job_postings`
+2. **공고 상세 URL 분석** → `job_extract_service`(대상 회사 검증 + LLM JD 구조화)
 3. **공고별 JD 생성/저장** → `job_posting_jds`(`job_posting_service.upsert_jd`)
 4. **Drive 공고 폴더 생성**(JD 저장 성공 시, 한 트랜잭션) → `job_posting_drive_service`
 5. **공고 기준 이력서 업로드** → `resumes_router` + `resume_drive_upload_service`(Drive inbox), PENDING 저장
@@ -125,7 +125,7 @@
    2. DB: `/api/db/health` (timeout 이면 `DB_HOST`/`DATABASE_URL`/`host.docker.internal` 점검).
    3. Drive/SSL: `curl` 성공인데 API 실패면 CA 번들(`/etc/ssl/certs/ca-certificates.crt`) 점검.
    4. OpenAI: `[llm] error type/message` 로 인증/모델/네트워크 구분.
-7. **NCP 배포 후 점검 순서** — ACG 28080 오픈 → 서버 내부 `curl http://localhost:28080/` → `/api/db/health` → 브라우저 접속.
+7. **배포 후 점검 순서** — 방화벽/보안그룹에서 `APP_HOST_PORT` 오픈 → 서버 내부 `curl http://localhost:28080/` → `/api/db/health` → 브라우저 접속.
 
 ---
 
@@ -149,8 +149,8 @@
 
 1. **공고 + JD 통합 등록** — Resume AI **공고/JD 관리 > [+ 공고 등록]**. 팝업에 **공고 기본 정보 + JD 상세가 처음부터 함께** 표시되며, 저장 버튼은 **하나**(신규=`공고 등록` / 수정=`공고 수정`)로 공고+JD를 함께 저장합니다.
    - 공고명/JD명, **부서/팀(선택사항 — 미지정 가능, 사용자가 직접 권한 범위 검색·선택)**, 플랫폼, 플랫폼 공고 URL, 상태. JD: 자격 요건/우대 사항/주요 업무(줄바꿈 입력 → 저장 시 기존 로직으로 JSONB 배열 변환).
-   - **(선택) URL 자동 채우기**: 플랫폼 공고 URL 입력 후 **[공고 내용 가져오기]** → **디딤(주) 공고로 확인된 경우에만** 본문을 수집해 LLM 으로 공고명/주요 업무/자격 요건/우대 사항을, 플랫폼은 **URL 도메인 기준**으로 채움.
-     - **공고명/JD명(`job_title`)은 "모집분야"가 아니라 공고 상단 제목을 우선 사용**: `og:title`/`<title>` 에서 정적 추출 후 사이트명·마감 D-day·회사명 대괄호 suffix 를 제거(예: `[디딤(주)] IDC 인프라 운영 엔지니어 채용(D-28) - 사람인` → `IDC 인프라 운영 엔지니어 채용`). 상단 제목을 못 찾으면 LLM 추출값 → 모집분야 순으로 fallback. (응답에 `posting_title`/`recruit_field` 참고 필드 분리)
+   - **(선택) URL 자동 채우기**: 플랫폼 공고 URL 입력 후 **[공고 내용 가져오기]** → **대상 회사 공고로 확인된 경우에만** 본문을 수집해 LLM 으로 공고명/주요 업무/자격 요건/우대 사항을, 플랫폼은 **URL 도메인 기준**으로 채움.
+     - **공고명/JD명(`job_title`)은 "모집분야"가 아니라 공고 상단 제목을 우선 사용**: `og:title`/`<title>` 에서 정적 추출 후 사이트명·마감 D-day·회사명 대괄호 suffix 를 제거(예: `[샘플(주)] 인프라 운영 엔지니어 채용(D-28) - 사람인` → `인프라 운영 엔지니어 채용`). 상단 제목을 못 찾으면 LLM 추출값 → 모집분야 순으로 fallback. (응답에 `posting_title`/`recruit_field` 참고 필드 분리)
      - **수집 fallback**: 정적 HTML 본문(STATIC_HTML) → 사람인 상세 iframe `relay/view-detail?rec_idx=` 정적 fetch(SARAMIN_DETAIL) → 동일 출처 iframe(IFRAME). (사람인 JD 는 JS 로드 iframe 에 있어 메인 HTML 에 없지만 상세 URL 을 정적으로 가져와 채움 — Playwright 미사용)
      - 본문에 섹션이 있는데 추출이 비면 성공이 아닌 **경고**(warning/debug_reason)로 안내. **이미 입력값이 있으면 confirm 후 교체**(취소 시 유지), **부서/팀·상태는 변경하지 않음**. **자동 저장하지 않으며** 사용자가 확인·수정 후 저장 버튼을 눌러야 기존 Drive 연동/DB 저장이 동작합니다. (권한 ADMIN/MANAGER, SSRF 방어)
    - 공고만 저장(JD 입력 없음) 시 "JD 미등록", Drive 폴더 미생성.
@@ -178,18 +178,18 @@
 
 ---
 
-## 채용 플랫폼 디딤(주) 신규 공고 자동 수집 (배치, 2026-07)
+## 채용 플랫폼 대상 회사 신규 공고 자동 수집 (배치, 2026-07)
 
-수동 공고 등록(위 1~2)과 별개로, **사람인·잡코리아** 검색 결과에서 **디딤(주)** 신규 공고를 자동으로 찾아 등록하는 배치입니다. 두 플랫폼은 **같은 등록/큐 로직(`job_posting_discovery_service._discover`)을 재사용**하며, **JD 분석은 Celery worker 가 비동기로 처리**하고, 상세 URL 분석/JD 저장/Drive 폴더 생성은 위 수동 흐름과 **같은 service 를 재사용**합니다.
+수동 공고 등록(위 1~2)과 별개로, **사람인·잡코리아** 검색 결과에서 **대상 회사** 신규 공고를 자동으로 찾아 등록하는 배치입니다. 두 플랫폼은 **같은 등록/큐 로직(`job_posting_discovery_service._discover`)을 재사용**하며, **JD 분석은 Celery worker 가 비동기로 처리**하고, 상세 URL 분석/JD 저장/Drive 폴더 생성은 위 수동 흐름과 **같은 service 를 재사용**합니다.
 
 **지원 플랫폼**: 사람인(SARAMIN) · 잡코리아(JOBKOREA). **platform_code 자동 매핑**은 URL 도메인 기준(`job_extract_service.platform_code_for_url`) — `saramin.co.kr→SARAMIN`, `jobkorea.co.kr→JOBKOREA`, 그 외→기존 기본값(None). 수동 공고 등록/수정도 platform_code 미입력 시 URL 로 자동 채웁니다(사용자가 고른 값은 유지).
 
-**dry-run**: `POST /api/jobs/discover/{saramin|jobkorea}/didim?dry_run=true` — 실제 insert/큐 적재 없이 수집·중복 판단 결과만(`platform_code`/`company_name`/`title`/`raw_url`/`normalized_url`/`is_duplicate`/`skip_reason`) 반환.
+**dry-run**: `POST /api/jobs/discover/{saramin|jobkorea}?dry_run=true` — 실제 insert/큐 적재 없이 수집·중복 판단 결과만(`platform_code`/`company_name`/`title`/`raw_url`/`normalized_url`/`is_duplicate`/`skip_reason`) 반환.
 
 ```text
 [수동 API 또는 Scheduler(주석)]
 사람인 수집
-→ 디딤(주) 필터 + detail_url 중복 확인
+→ 대상 회사 필터 + detail_url 중복 확인
 → 신규 공고 insert (status=DRAFT)
 → JD 분석 task enqueue (posting_id)  → status=JD_QUEUED
 
@@ -201,13 +201,13 @@
 → status=JD_READY (실패 시 JD_FAILED)
 ```
 
-1. **사람인 검색 결과 수집** — `SARAMIN_DIDIM_SEARCH_URL`(디딤 검색) 페이지를 정적 수집(SSRF 방어 재사용) → 카드 단위로 회사명/제목/`rec_idx`/detail_url 파싱. 정적 HTML 파싱은 `item_recruit` 카드 → `corp_name` 세그먼트 + `a.str_tit`/`rec_link` → 링크 전체 스캔 순으로 fallback 하여 detail_url 을 보강 수집합니다(회사명 결속 없는 링크는 미등록). ※ 검색 결과가 JS 렌더링인 경우 정적 수집 한계 → 렌더링 DOM fallback 은 후속(docs/TODO).
-2. **신규 공고 판단** — 회사명 normalize 후 **디딤(주)/디딤 (주)/디딤 주식회사** exact 일치만 통과. detail_url 은 `rec_idx` 기준 표준 URL 로 정규화, `job_postings.platform_posting_url`(rec_idx) 로 **중복 확인** → 신규만 진행.
+1. **사람인 검색 결과 수집** — `SARAMIN_SEARCH_URL`(대상 회사 검색) 페이지를 정적 수집(SSRF 방어 재사용) → 카드 단위로 회사명/제목/`rec_idx`/detail_url 파싱. 정적 HTML 파싱은 `item_recruit` 카드 → `corp_name` 세그먼트 + `a.str_tit`/`rec_link` → 링크 전체 스캔 순으로 fallback 하여 detail_url 을 보강 수집합니다(회사명 결속 없는 링크는 미등록). ※ 검색 결과가 JS 렌더링인 경우 정적 수집 한계 → 렌더링 DOM fallback 은 후속(docs/TODO).
+2. **신규 공고 판단** — 회사명 normalize 후 **`TARGET_COMPANY_NAMES` 목록** 과 exact 일치만 통과. detail_url 은 `rec_idx` 기준 표준 URL 로 정규화, `job_postings.platform_posting_url`(rec_idx) 로 **중복 확인** → 신규만 진행.
 3. **신규 공고 insert + 큐 적재** — `job_posting_service.create_posting`(status=DRAFT, platform=SARAMIN, 부서 미지정) 후 **`analyze_job_posting_jd_task.delay(posting_id)`** 로 큐 적재, 공고 status=`JD_QUEUED`. (큐에는 posting_id 만)
 4. **Worker: URL 분석/JD 생성/Drive 폴더** — worker 가 posting_id 로 재조회 → `JD_PROCESSING` → `job_extract_service.extract_from_url` → `upsert_jd`(JD 저장 + Drive 폴더, 한 트랜잭션) → `JD_READY`. 실패 시 `JD_FAILED`, 일시적 실패는 제한 재시도. 이미 active JD 있으면 skip(멱등).
 
-- **수동 실행**: `POST /api/jobs/discover/saramin/didim` · `POST /api/jobs/discover/jobkorea/didim` (ADMIN/MANAGER). 결과 요약(collected/matched/new/**queued**/duplicate/failed + 항목별 상태) 반환. 같은 API 를 두 번 실행하면 2회차는 동일 공고를 duplicate 로 skip(task 중복 enqueue 없음).
-- **스케줄러(1시간 주기)**: `app/services/scheduler_service.py` 에 사람인/잡코리아 진입점(`run_saramin_didim_discovery`/`run_jobkorea_didim_discovery`)과 등록 코드가 있으나 **실제 등록은 주석 처리**(서버 startup 자동 실행 안 함).
+- **수동 실행**: `POST /api/jobs/discover/saramin` · `POST /api/jobs/discover/jobkorea` (ADMIN/MANAGER). 결과 요약(collected/matched/new/**queued**/duplicate/failed + 항목별 상태) 반환. 같은 API 를 두 번 실행하면 2회차는 동일 공고를 duplicate 로 skip(task 중복 enqueue 없음).
+- **스케줄러(1시간 주기)**: `app/services/scheduler_service.py` 에 사람인/잡코리아 진입점(`run_saramin_discovery`/`run_jobkorea_discovery`)과 등록 코드가 있으나 **실제 등록은 주석 처리**(서버 startup 자동 실행 안 함).
 - 공고 하나가 실패해도 나머지는 계속 처리합니다. 민감정보/HTML 전체는 로그로 남기지 않습니다.
 
 ### 잡코리아 수집 특이점
@@ -215,7 +215,7 @@
 - **검색 결과가 서버 렌더링(SSR)** 이라 정적 HTML 로 카드가 존재합니다(사람인 검색 목록이 JS 렌더링이던 것과 대비). 제목 앵커(`data-sentry-component="Title"`)의 `href=".../Recruit/GI_Read/{gno}"` 에서 공고 고유 id(`gno`, GI_No)·제목을 잡고, 같은 gno 의 회사 앵커에서 회사명을 결속합니다. 회사명 결속 없는 링크는 미등록(false positive 방지).
 - **normalized URL**: tracking(`Oem_Code`/`logpath`/`stext`/`listno`/`sc`) 제거하고 gno 로 재구성 → `https://www.jobkorea.co.kr/Recruit/GI_Read/{gno}`. tracking 만 다른 같은 공고는 같은 canonical → 중복 insert 안 됨.
 - **중복 판단**: `platform_code=JOBKOREA` + gno(과거 tracking 저장분 포함) → normalized_url. 플랫폼 스코프로 사람인 rec_idx 와 충돌하지 않습니다.
-- 회사명 `디딤㈜`(㈜=U+321C)는 `(주)`로 치환 후 사람인과 **동일한 회사명 필터**를 재사용합니다. Playwright 미사용(정적 수집). 구조 변경은 `parser_missed` 로그로 감지.
+- 회사명의 `㈜`(U+321C) 합자 표기는 `(주)`로 치환 후 사람인과 **동일한 회사명 필터**를 재사용합니다. Playwright 미사용(정적 수집). 구조 변경은 `parser_missed` 로그로 감지.
 
 > **이력서 분석 비동기화(`/api/resumes/analyze-posting` 등)는 2차 작업**에서 진행합니다. 레거시 부서 중심 `analyze_pending`/`batch_service` 는 큐 대상이 아닙니다.
 > 작업 기록: [`docs/work-log/2026-07-07-saramin-job-discovery-batch.md`](work-log/2026-07-07-saramin-job-discovery-batch.md), [`docs/work-log/2026-07-07-celery-redis-job-posting-jd-analysis.md`](work-log/2026-07-07-celery-redis-job-posting-jd-analysis.md).

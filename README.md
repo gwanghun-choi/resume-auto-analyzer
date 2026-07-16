@@ -21,7 +21,7 @@
 - [11. 프로젝트 구조](#11-프로젝트-구조)
 - [12. 환경변수](#12-환경변수)
 - [13. 실행 방법](#13-실행-방법)
-- [14. 배포 (Docker / NCP)](#14-배포-docker--ncp)
+- [14. 배포 (Docker)](#14-배포-docker)
 - [15. 보안 / SSL·CA / 트러블슈팅](#15-보안--sslca--트러블슈팅)
 
 ---
@@ -38,7 +38,7 @@
 | 파일 저장소 | Google Drive (OAuth) — 이력서 업로드/이동, 부서·공고 폴더 |
 | 문서 파싱 | `pypdf`(PDF), `python-docx`(DOCX), `openpyxl`(Excel 내보내기) |
 | 인증 | 서버 세션(서명 쿠키, JWT 아님) + `bcrypt` 비밀번호 해시 |
-| 배포 | Docker / Docker Compose, NCP 서버, 사내 Fortinet Root CA 대응 |
+| 배포 | Docker / Docker Compose (사설 Root CA 선택 지원) |
 
 ---
 
@@ -105,7 +105,7 @@ flowchart LR
 
 **핵심 원칙**
 - API는 무거운 작업(공고 JD 분석·이력서 분석)을 직접 실행하지 않고 **큐에 `posting_id`만 적재**한 뒤 즉시 응답합니다. Worker가 DB에서 다시 조회해 처리합니다.
-- Worker는 API와 **동일 이미지/`.env`/볼륨**을 사용해 DB·OpenAI·Google Drive·사내 CA에 동일하게 접근합니다.
+- Worker는 API와 **동일 이미지/`.env`/볼륨**을 사용해 DB·OpenAI·Google Drive·CA 번들에 동일하게 접근합니다.
 
 ---
 
@@ -292,13 +292,13 @@ stateDiagram-v2
 
 ## 8. 채용 플랫폼 신규 공고 자동 수집 (사람인·잡코리아)
 
-**사람인·잡코리아** 검색 결과에서 **디딤(주)** 신규 공고를 자동으로 `job_postings`에 등록하고, JD 분석은 Celery worker가 비동기로 처리합니다. 두 플랫폼은 **같은 등록/큐 로직**(`job_posting_discovery_service._discover`)을 재사용하며, 각 수집기만 플랫폼별로 분리되어 있습니다(복붙 없음).
+**사람인·잡코리아** 검색 결과에서 **대상 회사**(`TARGET_COMPANY_NAME`) 신규 공고를 자동으로 `job_postings`에 등록하고, JD 분석은 Celery worker가 비동기로 처리합니다. 두 플랫폼은 **같은 등록/큐 로직**(`job_posting_discovery_service._discover`)을 재사용하며, 각 수집기만 플랫폼별로 분리되어 있습니다(복붙 없음).
 
 ```mermaid
 flowchart TD
     S["플랫폼 검색 결과 정적 수집<br/>(SSRF 방어 재사용)"] --> P["수집기<br/>사람인: item_recruit→corp_name→링크스캔<br/>잡코리아: GI_Read 제목/회사 앵커(SSR)"]
-    P --> F{"회사명 = 디딤(주)?<br/>(normalize exact)"}
-    F -->|No| X["제외 (다른 디딤 계열)"]
+    P --> F{"회사명 = 대상 회사?<br/>(normalize exact)"}
+    F -->|No| X["제외 (상호가 비슷한 다른 회사)"]
     F -->|Yes| N{"platform_code + 공고 id<br/>/ normalized_url 중복?"}
     N -->|중복| DUP["skip"]
     N -->|신규| I["job_postings insert (DRAFT)<br/>platform_code=SARAMIN/JOBKOREA"]
@@ -319,8 +319,8 @@ flowchart TD
 | 검색 렌더링 | 목록이 **JS 렌더링**(라이브 정적 수집 한계) | **서버 렌더링(SSR)** — 정적 수집 동작(라이브 12건 확인) |
 | 공고 식별자 | `rec_idx` | `GI_Read/{gno}`(GI_No) |
 | URL 정규화 | tracking 제거, `.../relay/view?rec_idx=NNN` | tracking 제거, `.../Recruit/GI_Read/{gno}` |
-| 회사명 필터 | `디딤(주)`/`디딤 (주)`/`디딤 주식회사` exact (공용) | 동일 필터 재사용 (`디딤㈜`는 `(주)` 치환 후) |
-| 수동 실행 | `POST /api/jobs/discover/saramin/didim` | `POST /api/jobs/discover/jobkorea/didim` |
+| 회사명 필터 | `TARGET_COMPANY_NAMES` 목록과 normalize exact (공용) | 동일 필터 재사용 (`㈜`는 `(주)` 치환 후) |
+| 수동 실행 | `POST /api/jobs/discover/saramin` | `POST /api/jobs/discover/jobkorea` |
 
 - **공통**: 중복은 `platform_code` + 공고 식별자(정규화 `platform_posting_url`) 기준(별도 `external_id` 컬럼 없음). 큐에는 `detail_url`이 아니라 **`posting_id`**. 회사명 결속 없는 링크는 미등록(false positive 방지). 스케줄러 1시간 주기 코드는 있으나 **주석 처리**(startup 자동 실행 안 함).
 - **dry-run**: `...?dry_run=true` → 실제 insert/큐 적재 없이 수집·중복 판단 결과(`platform_code`/`company_name`/`title`/`raw_url`/`normalized_url`/`is_duplicate`/`skip_reason`)만 반환(검증용).
@@ -356,7 +356,7 @@ flowchart TD
 | `admin_users_router` | `/api/admin` | 사용자 CRUD·활성 토글·비번 초기화 (ADMIN) | KEEP |
 | `job_postings_router` | `/api/job-postings` | 목록/검색/상세, `{id}/jd`(upsert+Drive), `{id}/jd/recommend` | KEEP |
 | `resumes_router` | `/api/resumes` | `upload-to-drive`, `status`(+Excel), `analyze-posting/selected/all` | KEEP |
-| `jobs_router` | `/api/jobs` | `extract-from-url`, `discover/saramin/didim`, `discover/jobkorea/didim` (둘 다 `?dry_run`) | KEEP |
+| `jobs_router` | `/api/jobs` | `extract-from-url`, `discover/saramin`, `discover/jobkorea` (둘 다 `?dry_run`) | KEEP |
 | `drive_router` | `/api/drive` | Drive 연결/폴더 동기화, `dept-config` | INFRA |
 | `departments_router` | `/api/departments` | 부서 트리, Drive→DB 동기화 | INFRA |
 | `db_router` | `/api/db` | health/tables/counts | INFRA |
@@ -393,7 +393,7 @@ resume-auto-analyzer/
 ├─ alembic/                 # DB 마이그레이션 (0001~0005)
 ├─ docs/
 │  ├─ WORKFLOW.md TODO.md sql/ work-log/
-├─ certs/                   # 사내 Root CA (Fortinet)
+├─ certs/                   # 사설 Root CA (선택, Git 제외 — certs/README.md 참고)
 ├─ secrets/google/          # OAuth credentials.json / token.json (Git 제외)
 ├─ Dockerfile docker-compose.yml run.sh
 └─ pyproject.toml uv.lock .env(.example)
@@ -413,9 +413,13 @@ resume-auto-analyzer/
 | `GOOGLE_CREDENTIALS_PATH` / `GOOGLE_TOKEN_PATH` | Google OAuth 파일 경로 |
 | `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Redis (compose 내부는 `redis://redis:6379/0`) |
 | `CELERY_TASK_DEFAULT_QUEUE` / `CELERY_TIMEZONE` | 큐/타임존 (`job_discovery` / `Asia/Seoul`) |
-| `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` | 사내 Root CA 번들 경로 |
-| `SARAMIN_DIDIM_SEARCH_URL` / `_KEYWORD` / `_COMPANY_NAME` | 사람인 수집 설정 (미설정 시 코드 기본값) |
-| `JOBKOREA_DIDIM_SEARCH_URL` / `_KEYWORD` / `_COMPANY_NAME` | 잡코리아 수집 설정 (미설정 시 코드 기본값) |
+| `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` | CA 번들 경로 (사내망 SSL inspection 대응 시) |
+| `TARGET_COMPANY_NAME` / `_NAMES` / `_KEYWORDS` | **수집 대상 회사** (기본값 없음 — 미설정 시 수집/검증 비활성) |
+| `SARAMIN_SEARCH_URL` / `SARAMIN_SEARCH_KEYWORD` | 사람인 수집 설정 (URL 기본값 없음) |
+| `JOBKOREA_SEARCH_URL` / `JOBKOREA_SEARCH_KEYWORD` | 잡코리아 수집 설정 (URL 기본값 없음) |
+| `DEPT_JSON_PATH` | 부서 JSON 경로 (기본 가상 샘플) |
+| `DRIVE_SHORTCUT_URL` | 좌측 메뉴 Drive 바로가기 (미설정 시 숨김) |
+| `APP_HOST_PORT` | compose 호스트 노출 포트 (기본 `28080`) |
 
 ---
 
@@ -452,7 +456,7 @@ uv run alembic current      # 상태 확인 → 0005 (head)
 
 ---
 
-## 14. 배포 (Docker / NCP)
+## 14. 배포 (Docker)
 
 ### Docker Compose
 
@@ -465,7 +469,7 @@ docker compose logs -f resume-ai-worker
 flowchart LR
     subgraph compose["docker-compose"]
         redis[("redis:7-alpine<br/>내부 네트워크")]
-        app["resume-ai<br/>28080:8000"]
+        app["resume-ai<br/>${APP_HOST_PORT}:8000"]
         worker["resume-ai-worker<br/>-Q job_discovery,resume_analysis"]
     end
     app -->|broker| redis
@@ -474,25 +478,29 @@ flowchart LR
     worker -. "volume" .-> vol
 ```
 
-- 포트: 호스트 **`28080`** → 컨테이너 `8000` → http://서버IP:28080/docs
+- 포트: 호스트 **`APP_HOST_PORT`**(기본 `28080`) → 컨테이너 `8000` → `http://<서버주소>:<APP_HOST_PORT>/docs`
 - app/worker는 **동일 이미지·`.env`·볼륨**(google secrets, data) 사용. redis는 기본 내부 네트워크만(host 포트 미노출).
 - `.env` / `secrets` / `credentials.json` / `token.json` 은 이미지에 포함하지 않고 `env_file`/volume으로 runtime 주입(`.dockerignore` 처리).
 
-### NCP 서버 (tar.gz + scp)
+### 원격 서버 배포
 
 ```bash
-# 로컬: 압축 → scp 업로드 → 서버에서 해제 → .env/secrets/certs 배치
+# 로컬: 소스 전송(git clone 또는 압축 후 scp) → 서버에서 .env / secrets / (선택) certs 배치
 docker compose up -d --build
-# NCP ACG(방화벽)에서 28080 인바운드 오픈
 ```
+
+- `.env`, `secrets/`, `certs/` 는 저장소에 포함되지 않으므로 서버에서 별도로 배치합니다.
+- 방화벽/보안그룹에서 `APP_HOST_PORT` 인바운드를 열어야 외부 접속이 됩니다.
 
 ---
 
 ## 15. 보안 / SSL·CA / 트러블슈팅
 
-### SSL / 사내 CA (Fortinet)
+### SSL / 사설 CA (선택)
 
-회사망 SSL inspection 대응을 위해 `certs/company-root-ca.crt`(FortiGate Root CA)를 Docker 이미지 시스템 번들에 병합(`update-ca-certificates`)하고, `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`로 지정합니다. OpenAI 호출만 공개 CA(certifi)로 별도 처리합니다.
+SSL inspection 이 있는 네트워크에서는 `certs/` 에 사설 Root CA(`*.crt`)를 두면 Docker 이미지의 시스템 번들에 병합(`update-ca-certificates`)되고, `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`이 이를 가리킵니다. `certs/` 가 비어 있으면 공개 CA 만 사용하며 정상 빌드됩니다. OpenAI 호출은 항상 공개 CA(certifi)로 별도 처리합니다.
+
+> 사설 CA 인증서는 내부 네트워크 구성을 드러낼 수 있어 Git 에 커밋하지 않습니다(`certs/README.md` 참고).
 
 ### Google 계정 / Token 교체
 
@@ -521,7 +529,7 @@ docker compose up -d --build
 | DB 연결 timeout | `DATABASE_URL`/`DB_HOST`, (Docker) `host.docker.internal` |
 | 사람인 수집 0건 | 검색 결과 JS 렌더링 한계(정적 수집 불가) — Playwright fallback 후속 과제 |
 | 잡코리아 수집 0건 | SSR 이나 사이트 구조 변경 가능 — `parser_missed` 로그 확인 후 파서 갱신 |
-| 외부 API TLS 오류 | 사내 CA 번들(`SSL_CERT_FILE`) 설정 |
+| 외부 API TLS 오류 | CA 번들(`SSL_CERT_FILE`) 설정 — 사설 CA 사용 시 `certs/` 배치 확인 |
 
 ---
 

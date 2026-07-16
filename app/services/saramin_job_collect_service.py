@@ -8,7 +8,7 @@ from app.services.job_extract_service import (
     _assert_safe_url, _fetch_html, JobExtractError,
 )
 
-# 사람인 '디딤' 검색 결과 페이지를 정적으로 수집해 디딤(주) 신규 공고 후보를 추립니다.
+# 사람인 검색 결과 페이지를 정적으로 수집해 대상 회사의 신규 공고 후보를 추립니다.
 # - 상세 URL 분석/LLM 구조화는 이 서비스가 하지 않습니다(기존 job_extract_service.extract_from_url 재사용).
 #   여기서는 "목록에서 신규 detail_url 을 찾는 것" 까지만 담당합니다.
 # - HTML fetch 는 job_extract_service._fetch_html(SSRF 방어/크기 제한 포함)을 재사용합니다.
@@ -24,10 +24,10 @@ from app.services.job_extract_service import (
 
 SARAMIN_BASE = "https://www.saramin.co.kr"
 
-# 디딤(주) 로 인정할 회사명(정규화=모든 공백 제거 후 비교). 검색어가 '디딤'이라고 모두 같은 회사가 아니므로
-# exact(normalize 후) 매칭만 통과시킵니다. (예: '디딤 정신건강의학과의원', '(주)디딤 커뮤니케이션' 등은 제외)
-#   허용:  디딤(주) / 디딤 (주) / 디딤 주식회사
-ALLOWED_COMPANY_NORMALIZED = {"디딤(주)", "디딤주식회사"}
+# 대상 회사로 인정할 회사명은 .env 의 TARGET_COMPANY_NAMES 로만 주입합니다(코드에 회사명 하드코딩 금지).
+# 정규화=모든 공백 제거 후 exact 매칭만 통과시킵니다. 검색어가 같아도 상호가 비슷한 다른 회사가 섞이므로
+# 부분일치를 쓰면 false positive 가 발생합니다.
+#   예) TARGET_COMPANY_NAMES="샘플(주),샘플주식회사" → '샘플 (주)' 통과, '샘플커뮤니케이션' 제외
 
 # 검색 결과 카드(div.item_recruit) 단위 파싱용 정규식 (1차)
 _ITEM_SPLIT = re.compile(r'<div[^>]*class="[^"]*\bitem_recruit\b[^"]*"', re.IGNORECASE)
@@ -61,14 +61,21 @@ class SaraminCollectError(Exception):
 
 
 def normalize_company(name: str) -> str:
-    """회사명 비교용 정규화: HTML unescape + 모든 공백 제거. '디딤 (주)' → '디딤(주)'."""
+    """회사명 비교용 정규화: HTML unescape + 모든 공백 제거. '샘플 (주)' → '샘플(주)'."""
     s = html.unescape(name or "").strip()
     return re.sub(r"\s+", "", s)
 
 
-def is_didim_company(name: str) -> bool:
-    """정규화 후 디딤(주) 계열(허용 목록)과 정확히 일치할 때만 True."""
-    return normalize_company(name) in ALLOWED_COMPANY_NORMALIZED
+def is_target_company(name: str) -> bool:
+    """정규화 후 TARGET_COMPANY_NAMES 허용 목록과 정확히 일치할 때만 True.
+
+    회사명이 설정되지 않았으면 항상 False — 대상이 없으면 아무 공고도 등록하지 않습니다.
+    (설정 누락을 '전부 통과'로 해석하면 무관한 공고가 대량 등록되므로 fail-closed.)
+    """
+    allowed = settings.target_company_names
+    if not allowed:
+        return False
+    return normalize_company(name) in allowed
 
 
 def extract_rec_idx(url: str) -> str:
@@ -192,18 +199,21 @@ def _scan_view_rec_idx(raw_html: str):
     return found, fail
 
 
-def collect_didim_postings(search_url: str = None) -> dict:
-    """사람인 '디딤' 검색 결과를 수집하고 디딤(주) 공고만 필터링해 반환합니다.
+def collect_target_postings(search_url: str = None) -> dict:
+    """사람인 검색 결과를 수집하고 대상 회사 공고만 필터링해 반환합니다.
 
     1차(item_recruit) + 2차(corp_name 세그먼트 fallback) 결과를 rec_idx 로 dedupe(1차 우선)하고,
     3차 링크 스캔은 파서가 놓친 rec_idx 감지/로깅용으로만 사용합니다.
-    반환: {"search_url", "collected_count"(회사명 결속된 카드 수), "items"(디딤(주) 매칭만)}.
+    반환: {"search_url", "collected_count"(회사명 결속된 카드 수), "items"(대상 회사 매칭만)}.
     fetch/parse 실패 시 SaraminCollectError.
     """
-    url = (search_url or settings.SARAMIN_DIDIM_SEARCH_URL or "").strip()
+    if not settings.target_company_names:
+        raise SaraminCollectError("수집 대상 회사명이 설정되지 않았습니다.", "target_company_not_configured",
+                                  ".env 의 TARGET_COMPANY_NAMES 를 설정해주세요.", status_code=500)
+    url = (search_url or settings.SARAMIN_SEARCH_URL or "").strip()
     if not url:
         raise SaraminCollectError("사람인 검색 URL 이 설정되지 않았습니다.", "search_url_not_configured",
-                                  ".env 의 SARAMIN_DIDIM_SEARCH_URL 을 확인해주세요.", status_code=500)
+                                  ".env 의 SARAMIN_SEARCH_URL 을 확인해주세요.", status_code=500)
     try:
         _assert_safe_url(url)
         raw_html = _fetch_html(url)
@@ -230,10 +240,10 @@ def collect_didim_postings(search_url: str = None) -> dict:
         by_rec[it["rec_idx"]] = it
     all_items = list(by_rec.values())
 
-    matched = [it for it in all_items if is_didim_company(it["company_name"])]
+    matched = [it for it in all_items if is_target_company(it["company_name"])]
     # 링크 스캔에서만 발견된 rec_idx(파서가 회사명 결속에 실패한 것) = 파서 갱신 필요 신호
     parser_missed = len(scan_recs - set(by_rec.keys()))
     _log(f"[saramin-collect] primary={len(primary)} fallback={len(fallback)} "
          f"deduped={len(all_items)} link_scan={len(scan_recs)} parser_missed={parser_missed} "
-         f"rec_fail={rec_fail} matched_didim={len(matched)}")
+         f"rec_fail={rec_fail} matched_target={len(matched)}")
     return {"search_url": url, "collected_count": len(all_items), "items": matched}

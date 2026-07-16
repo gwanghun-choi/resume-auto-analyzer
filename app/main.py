@@ -75,7 +75,8 @@ async def read_root(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={}
+        # Drive 바로가기 링크는 배포 환경마다 다르므로 .env 로만 주입합니다. 미설정이면 메뉴에서 숨깁니다.
+        context={"drive_shortcut_url": settings.DRIVE_SHORTCUT_URL}
     )
 
 

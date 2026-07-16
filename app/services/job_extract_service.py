@@ -5,10 +5,11 @@ import socket
 import urllib.request
 from urllib.parse import urlparse, parse_qs, urljoin
 
+from app.core.config import settings
 from app.services.google_drive_service import _log
 from app.services.openai_llm_service import call_openai_json, api_key_present, OpenAILLMError
 
-# 공고 URL → 페이지 텍스트 추출 → (디딤(주) 공고 검증) → LLM 으로 공고 기본정보/JD 추출.
+# 공고 URL → 페이지 텍스트 추출 → (대상 회사 공고 검증) → LLM 으로 공고 기본정보/JD 추출.
 # 결과는 화면 입력값 자동 채우기 용도로만 반환합니다. (DB 저장/부서 자동선택 없음)
 #
 # 보안:
@@ -16,9 +17,10 @@ from app.services.openai_llm_service import call_openai_json, api_key_present, O
 #  - 응답 크기/LLM 입력 길이 제한.
 #  - 민감정보(API key 등)는 로그/응답에 출력하지 않습니다.
 
-# 디딤(주) 공고로 인정할 회사명 키워드
-COMPANY_KEYWORDS = ["디딤(주)", "(주)디딤", "주식회사 디딤", "디딤"]
-COMPANY_NAME = "디딤(주)"
+# 대상 회사 공고로 인정할 회사명 키워드/대표 표기는 .env 로만 주입합니다(코드에 회사명 하드코딩 금지).
+#   TARGET_COMPANY_KEYWORDS : 공고 본문/HTML 에서 부분일치로 회사 결속을 확인할 키워드(쉼표 구분)
+#   TARGET_COMPANY_NAME     : 응답에 실어 보낼 대표 표기
+# 미설정이면 어떤 공고도 검증되지 않습니다(fail-closed).
 
 # URL 도메인 → (플랫폼 코드, 라벨). 코드는 공고 모달 select option value 와 매칭됩니다.
 # select 에 없는 코드(JUMPIT/INCRUIT/CAREER)는 프론트에서 선택하지 않고 라벨만 참고합니다.
@@ -206,8 +208,10 @@ def _html_to_text(html_str: str) -> str:
 
 
 def _build_prompt(text: str) -> str:
+    # 회사명은 설정값에서 받아 프롬프트에 넣습니다(코드에 하드코딩 금지).
+    company = settings.TARGET_COMPANY_NAME or "대상 회사"
     return (
-        "다음은 디딤(주)의 채용 공고 웹페이지에서 추출한 평문 텍스트입니다.\n"
+        f"다음은 {company}의 채용 공고 웹페이지에서 추출한 평문 텍스트입니다.\n"
         "이 텍스트에서 채용 정보를 아래 JSON 형식으로만 추출하세요.\n\n"
         "반드시 지켜야 할 규칙:\n"
         "1. 아래 4개 key 만 가진 JSON 객체 하나만 반환합니다. JSON 외 설명 문장은 절대 포함하지 마세요.\n"
@@ -219,8 +223,8 @@ def _build_prompt(text: str) -> str:
         "   - preferred     ← '우대 사항', '우대사항', '우대 조건', '우대조건', '우대요건'\n"
         "5. main_tasks/qualifications/preferred 는 줄바꿈으로 구분된 문자열로 작성합니다. 한 줄에 항목 하나, 줄 앞에 '-' 같은 bullet 기호는 붙이지 마세요.\n"
         "6. 해당 섹션 내용이 원문에 **있으면 반드시 채우고**(빈 문자열 금지), 원문에 정말 없을 때만 빈 문자열(\"\")로 둡니다.\n"
-        "7. job_title 은 채용공고 상단 제목(예: 'IDC 인프라 운영 엔지니어 채용')입니다.\n"
-        "   '모집분야' 값(예: 'IDC 인프라 엔지니어')은 job_title 로 쓰지 마세요. 상단 제목을 찾지 못한 경우에만 모집분야를 fallback 으로 사용합니다.\n\n"
+        "7. job_title 은 채용공고 상단 제목(예: '인프라 운영 엔지니어 채용')입니다.\n"
+        "   '모집분야' 값(예: '인프라 엔지니어')은 job_title 로 쓰지 마세요. 상단 제목을 찾지 못한 경우에만 모집분야를 fallback 으로 사용합니다.\n\n"
         "반환 형식(값 형태 예시):\n"
         "{\n"
         '  "job_title": "IDC 인프라 운영 엔지니어 채용",\n'
@@ -247,7 +251,7 @@ _SITE_SUFFIX = re.compile(r"\s*[-|]\s*(?:" + _SITE_NAMES + r")\s*$", re.IGNORECA
 _DDAY_SUFFIX = re.compile(
     r"\s*\((?:D[\-‐‑‒–]?\s?\d+|오늘마감|내일마감|상시\s*채용|상시모집|수시채용|채용\s*시\s*마감|마감[^)]*|~[^)]*)\)\s*$"
 )
-_COMPANY_PREFIX = re.compile(r"^\s*\[[^\]]*\]\s*")   # [디딤(주)] 같은 회사명 대괄호 prefix
+_COMPANY_PREFIX = re.compile(r"^\s*\[[^\]]*\]\s*")   # [샘플(주)] 같은 회사명 대괄호 prefix
 
 
 def _clean_title(raw) -> str:
@@ -352,8 +356,8 @@ def _collect_jd_text(url, p, raw_html, main_text):
 
 
 def extract_from_url(url: str) -> dict:
-    """공고 URL 에서 (디딤(주) 검증 후) 공고 기본정보/JD 를 수집·LLM 구조화합니다.
-    디딤(주) 공고가 아니면 company_verified=false 로 반환하고 LLM 을 호출하지 않습니다.
+    """공고 URL 에서 (대상 회사 검증 후) 공고 기본정보/JD 를 수집·LLM 구조화합니다.
+    대상 회사 공고가 아니면 company_verified=false 로 반환하고 LLM 을 호출하지 않습니다.
     JD 섹션이 원문에 있는데 추출이 비면 warning/debug_reason 으로 알립니다(조용한 성공 금지).
     """
     if not api_key_present():
@@ -364,10 +368,13 @@ def extract_from_url(url: str) -> dict:
     main_text = _html_to_text(raw_html)
     platform_code, platform_label = _platform_for_host(p.hostname)
 
-    # 1차 검증: 디딤(주) 공고인지 (메인 텍스트/원본 HTML 어디든 회사명 포함)
-    verified = any(kw in main_text for kw in COMPANY_KEYWORDS) or any(kw in raw_html for kw in COMPANY_KEYWORDS)
+    # 1차 검증: 대상 회사 공고인지 (메인 텍스트/원본 HTML 어디든 회사명 포함)
+    keywords = settings.target_company_keywords
+    verified = bool(keywords) and (
+        any(kw in main_text for kw in keywords) or any(kw in raw_html for kw in keywords)
+    )
     if not verified:
-        return _empty_result(url, "디딤(주) 공고로 확인되지 않아 자동 입력하지 않았습니다.", "COMPANY_NOT_VERIFIED")
+        return _empty_result(url, "대상 회사 공고로 확인되지 않아 자동 입력하지 않았습니다.", "COMPANY_NOT_VERIFIED")
 
     # JD 본문 수집 (정적 HTML → 사람인 상세 iframe → 동일 출처 iframe)
     jd_text, collector_method, collect_reason = _collect_jd_text(url, p, raw_html, main_text)
@@ -401,7 +408,7 @@ def extract_from_url(url: str) -> dict:
 
     return {
         "company_verified": True,
-        "company_name": COMPANY_NAME,
+        "company_name": settings.TARGET_COMPANY_NAME,
         "source_url": url,
         "platform": platform_code,
         "platform_label": platform_label,

@@ -8,10 +8,10 @@ from app.services.job_extract_service import (
     _assert_safe_url, _fetch_html, JobExtractError,
 )
 # 회사명 필터는 사람인 수집기와 동일 기준을 재사용합니다(복붙 금지). 잡코리아는 '㈜'(U+321C) 합자
-# 표기가 흔해서, 매칭 직전에만 '㈜' → '(주)' 로 치환한 뒤 공용 필터(is_didim_company)를 그대로 사용합니다.
-from app.services.saramin_job_collect_service import is_didim_company
+# 표기가 흔해서, 매칭 직전에만 '㈜' → '(주)' 로 치환한 뒤 공용 필터(is_target_company)를 그대로 사용합니다.
+from app.services.saramin_job_collect_service import is_target_company
 
-# 잡코리아 '디딤(주)' 검색 결과 페이지를 정적으로 수집해 디딤(주) 신규 공고 후보를 추립니다.
+# 잡코리아 검색 결과 페이지를 정적으로 수집해 대상 회사의 신규 공고 후보를 추립니다.
 # - 사람인 수집기(saramin_job_collect_service)와 같은 역할/스타일입니다.
 #   여기서는 "목록에서 신규 detail_url(공고 고유 GI_No)을 찾는 것" 까지만 담당하고,
 #   상세 URL 분석/LLM 구조화는 기존 job_extract_service.extract_from_url(Celery worker)이 수행합니다.
@@ -21,7 +21,7 @@ from app.services.saramin_job_collect_service import is_didim_company
 #
 # 카드 1건의 실제 DOM(요약):
 #   <a href=".../Recruit/GI_Read/49171061?..." ... data-sentry-component="Title"><span>공고 제목</span></a>
-#   <span ...><a href=".../Recruit/GI_Read/49171061?..."><span>디딤㈜</span></a></span>
+#   <span ...><a href=".../Recruit/GI_Read/49171061?..."><span>샘플㈜</span></a></span>
 # → 제목 앵커(data-sentry-component="Title")로 gno/제목을 잡고, 같은 gno 의 회사 앵커에서 회사명을 결속합니다.
 
 JOBKOREA_BASE = "https://www.jobkorea.co.kr"
@@ -51,9 +51,9 @@ class JobKoreaCollectError(Exception):
         self.status_code = status_code
 
 
-def _is_didim(name: str) -> bool:
-    """디딤(주) 계열 여부. 잡코리아 '㈜'(U+321C) 합자를 '(주)'로 바꾼 뒤 공용 필터를 재사용합니다."""
-    return is_didim_company((name or "").replace("㈜", "(주)"))
+def _is_target_company(name: str) -> bool:
+    """대상 회사 여부. 잡코리아 '㈜'(U+321C) 합자를 '(주)'로 바꾼 뒤 공용 필터를 재사용합니다."""
+    return is_target_company((name or "").replace("㈜", "(주)"))
 
 
 def extract_gno(url: str) -> str:
@@ -105,16 +105,19 @@ def _scan_gno(raw_html: str) -> set:
     return {m.group(1) for m in _GI_READ.finditer(raw_html)}
 
 
-def collect_didim_postings(search_url: str = None) -> dict:
-    """잡코리아 '디딤(주)' 검색 결과를 수집하고 디딤(주) 공고만 필터링해 반환합니다.
+def collect_target_postings(search_url: str = None) -> dict:
+    """잡코리아 검색 결과를 수집하고 대상 회사 공고만 필터링해 반환합니다.
 
-    반환: {"search_url", "collected_count"(회사명 결속된 카드 수), "items"(디딤(주) 매칭만)}.
+    반환: {"search_url", "collected_count"(회사명 결속된 카드 수), "items"(대상 회사 매칭만)}.
     fetch/parse 실패 시 JobKoreaCollectError.
     """
-    url = (search_url or settings.JOBKOREA_DIDIM_SEARCH_URL or "").strip()
+    if not settings.target_company_names:
+        raise JobKoreaCollectError("수집 대상 회사명이 설정되지 않았습니다.", "target_company_not_configured",
+                                   ".env 의 TARGET_COMPANY_NAMES 를 설정해주세요.", status_code=500)
+    url = (search_url or settings.JOBKOREA_SEARCH_URL or "").strip()
     if not url:
         raise JobKoreaCollectError("잡코리아 검색 URL 이 설정되지 않았습니다.", "search_url_not_configured",
-                                   ".env 의 JOBKOREA_DIDIM_SEARCH_URL 을 확인해주세요.", status_code=500)
+                                   ".env 의 JOBKOREA_SEARCH_URL 을 확인해주세요.", status_code=500)
     try:
         _assert_safe_url(url)
         raw_html = _fetch_html(url)
@@ -129,8 +132,8 @@ def collect_didim_postings(search_url: str = None) -> dict:
         raise JobKoreaCollectError("잡코리아 검색 결과를 해석하지 못했습니다.", "search_page_parse_failed",
                                    "잡코리아 페이지 구조가 바뀌었을 수 있습니다.", status_code=502) from e
 
-    matched = [it for it in cards if _is_didim(it["company_name"])]
+    matched = [it for it in cards if _is_target_company(it["company_name"])]
     parser_missed = len(scan_gnos - {it["rec_idx"] for it in cards})
     _log(f"[jobkorea-collect] cards={len(cards)} link_scan={len(scan_gnos)} "
-         f"parser_missed={parser_missed} matched_didim={len(matched)}")
+         f"parser_missed={parser_missed} matched_target={len(matched)}")
     return {"search_url": url, "collected_count": len(cards), "items": matched}

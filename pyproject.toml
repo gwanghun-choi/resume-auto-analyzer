@@ -1,11 +1,8 @@
 [project]
 name = "resume-auto-analyzer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Resume AI Analyzer — 채용 공고 수집 및 이력서 자동 분석"
 readme = "README.md"
-authors = [
-    { name = "ghchoi", email = "ghchoi@didim.com" }
-]
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13.0",

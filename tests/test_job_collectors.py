@@ -8,35 +8,40 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.core.config import settings
 from app.services import jobkorea_job_collect_service as jk
 from app.services import job_posting_discovery_service as disc
 from app.services import job_extract_service as je
 
-# 잡코리아 검색 결과 SSR DOM 을 축약한 fixture. 디딤㈜ 2건 + 제외 회사 1건.
+# 회사명 필터는 .env(TARGET_COMPANY_NAMES) 로 주입되므로, 테스트는 가상 회사명을 명시적으로 설정합니다.
+# (실제 배포 값에 의존하지 않도록 테스트 안에서 고정)
+settings.TARGET_COMPANY_NAMES = "샘플(주),샘플주식회사"
+
+# 잡코리아 검색 결과 SSR DOM 을 축약한 fixture. 샘플㈜ 2건 + 상호가 비슷한 제외 회사 1건.
 FIXTURE = """
 <div class="mb-0.5">
   <a href="https://www.jobkorea.co.kr/Recruit/GI_Read/49171061?Oem_Code=C1&amp;logpath=1&amp;stext=x&amp;listno=1&amp;sc=630"
      rel="noopener" target="_blank" class="mb-0.5 flex" data-interactive="true"
      data-sentry-element="BaseLink" data-sentry-component="Title" data-sentry-source-file="index.tsx">
-     <span class="truncate font-semibold">IDC 인프라 운영 엔지니어 채용</span></a></div>
+     <span class="truncate font-semibold">인프라 운영 엔지니어 채용</span></a></div>
 <span class="mb-5 inline-flex">
   <a href="https://www.jobkorea.co.kr/Recruit/GI_Read/49171061?Oem_Code=C1&amp;listno=1"
      rel="noopener" target="_blank" data-sentry-element="BaseLink" data-sentry-source-file="index.tsx">
-     <span class="truncate text-gray700">디딤㈜</span><span class="text-gray500"></span></a></span>
+     <span class="truncate text-gray700">샘플㈜</span><span class="text-gray500"></span></a></span>
 
 <div class="mb-0.5">
   <a href="/Recruit/GI_Read/49406903?logpath=1&amp;listno=2"
      class="mb-0.5 flex" data-sentry-component="Title" data-sentry-source-file="index.tsx">
-     <span class="truncate">GPUaaS 엔지니어 채용</span></a></div>
+     <span class="truncate">백엔드 엔지니어 채용</span></a></div>
 <span class="mb-5">
-  <a href="/Recruit/GI_Read/49406903?listno=2"><span class="text-gray700">디딤(주)</span></a></span>
+  <a href="/Recruit/GI_Read/49406903?listno=2"><span class="text-gray700">샘플(주)</span></a></span>
 
 <div class="mb-0.5">
   <a href="https://www.jobkorea.co.kr/Recruit/GI_Read/49332947?listno=3"
      data-sentry-component="Title" data-sentry-source-file="index.tsx">
-     <span>홍보,마케팅,기획 관련 대리급 경력자 모집</span></a></div>
+     <span>마케팅 담당자 모집</span></a></div>
 <span><a href="https://www.jobkorea.co.kr/Recruit/GI_Read/49332947?listno=3">
-  <span class="text-gray700">㈜디딤커뮤니케이션</span></a></span>
+  <span class="text-gray700">㈜샘플커뮤니케이션</span></a></span>
 """
 
 _fails = []
@@ -74,23 +79,24 @@ def test_url_normalize():
 
 
 def test_company_filter():
-    print("[_is_didim]")
-    for ok in ["디딤㈜", "디딤(주)", "디딤 (주)", "디딤 주식회사"]:
-        check(f"allow {ok}", jk._is_didim(ok) is True)
-    for no in ["㈜디딤커뮤니케이션", "디딤정신건강의학과의원", "서울이주여성디딤터", "디딤돌미술학원", ""]:
-        check(f"exclude {no or '(empty)'}", jk._is_didim(no) is False)
+    print("[_is_target_company]")
+    for ok in ["샘플㈜", "샘플(주)", "샘플 (주)", "샘플 주식회사"]:
+        check(f"allow {ok}", jk._is_target_company(ok) is True)
+    # 상호 앞뒤에 다른 토큰이 붙은 회사는 exact 매칭에서 제외되어야 합니다(false positive 방지).
+    for no in ["㈜샘플커뮤니케이션", "샘플정신건강의학과의원", "샘플터", "샘플돌미술학원", ""]:
+        check(f"exclude {no or '(empty)'}", jk._is_target_company(no) is False)
 
 
 def test_parser_fixture():
     print("[_parse_cards fixture]")
     cards = jk._parse_cards(FIXTURE)
     check("parsed 3 cards", len(cards) == 3)
-    matched = [c for c in cards if jk._is_didim(c["company_name"])]
-    check("matched 2 디딤(주)", len(matched) == 2)
+    matched = [c for c in cards if jk._is_target_company(c["company_name"])]
+    check("matched 2 샘플(주)", len(matched) == 2)
     gnos = sorted(c["rec_idx"] for c in matched)
     check("matched gnos", gnos == ["49171061", "49406903"])
     c0 = next(c for c in cards if c["rec_idx"] == "49171061")
-    check("title parsed", c0["title"] == "IDC 인프라 운영 엔지니어 채용")
+    check("title parsed", c0["title"] == "인프라 운영 엔지니어 채용")
     check("canonical detail_url", c0["detail_url"] == "https://www.jobkorea.co.kr/Recruit/GI_Read/49171061")
     check("raw_url absolute", c0["raw_url"].startswith("https://www.jobkorea.co.kr/Recruit/GI_Read/49171061?"))
     check("external_id", c0["external_id"] == "JOBKOREA:49171061")
@@ -102,9 +108,9 @@ def test_parser_fixture():
 def test_dry_run_shape():
     print("[_dry_run_items shape + duplicate]")
     items = [
-        {"company_name": "디딤㈜", "title": "A", "detail_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/1",
+        {"company_name": "샘플㈜", "title": "A", "detail_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/1",
          "raw_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/1?x=1", "rec_idx": "1"},
-        {"company_name": "디딤㈜", "title": "B", "detail_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/2",
+        {"company_name": "샘플㈜", "title": "B", "detail_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/2",
          "raw_url": "https://www.jobkorea.co.kr/Recruit/GI_Read/2?x=2", "rec_idx": "2"},
     ]
     # _find_existing 를 스텁: gno=1 은 기존(중복), gno=2 는 신규

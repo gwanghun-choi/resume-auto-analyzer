@@ -12,6 +12,12 @@ wheels/
 # 환경변수 (DB 접속정보/API 키 등 — .env.example 만 커밋)
 .env
 
+# 사설 Root CA 인증서 (사내망 SSL inspection 용) — 내부 네트워크 정보 노출 방지를 위해 커밋 금지.
+# 디렉토리 구조(.gitkeep/README)만 남기고 실제 인증서는 추적하지 않습니다.
+certs/*
+!certs/.gitkeep
+!certs/README.md
+
 # Google OAuth 인증 정보 (절대 커밋 금지)
 credentials.json
 token.json

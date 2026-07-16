@@ -1,6 +1,6 @@
-# Docker Compose 실행용. (NCP 서버에 파일 복사 후 `docker compose up -d --build`)
+# Docker Compose 실행용. (서버에 파일 복사 후 `docker compose up -d --build`)
 #
-# 포트: 호스트 18080 -> 컨테이너 8000  → 접속 http://서버IP:18080 (/docs)
+# 포트: 호스트 ${APP_HOST_PORT:-28080} -> 컨테이너 8000 → 접속 http://<서버주소>:<APP_HOST_PORT>/docs
 #
 # 주의(.env 경로): Docker Compose 실행 시 Google OAuth 파일 경로는 컨테이너 내부 절대경로를 사용해야 합니다.
 #   GOOGLE_CREDENTIALS_PATH=/app/secrets/google/credentials.json
@@ -26,7 +26,8 @@ services:
     env_file:
       - .env
     ports:
-      - "28080:8000"
+      # 호스트 노출 포트는 배포 환경마다 다르므로 .env 의 APP_HOST_PORT 로 조정합니다.
+      - "${APP_HOST_PORT:-28080}:8000"
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     depends_on:
@@ -42,9 +43,9 @@ services:
       timeout: 5s
       retries: 3
 
-  # Celery worker: 사람인 공고 JD 분석(job_discovery) + 이력서 분석(resume_analysis) 큐를 함께 처리.
+  # Celery worker: 공고 JD 분석(job_discovery) + 이력서 분석(resume_analysis) 큐를 함께 처리.
   # (선택 A — 한 worker 가 두 큐 처리. 부하 커지면 resume_analysis 전용 worker 로 분리 검토 — docs/TODO)
-  # (worker 도 DB / OPENAI_API_KEY / Google credentials / 회사 CA 에 접근해야 하므로 app 과 동일하게 구성)
+  # (worker 도 DB / OPENAI_API_KEY / Google credentials / CA 번들에 접근해야 하므로 app 과 동일하게 구성)
   resume-ai-worker:
     build:
       context: .

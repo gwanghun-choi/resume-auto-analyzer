@@ -6,8 +6,8 @@ from app.services.google_drive_service import _log
 # 배치 스케줄러. 현재는 "진입점 함수" 만 제공하고, 실제 1시간 주기 등록은 아래에 주석으로 둡니다.
 # (서버 startup 에서 자동 실행되지 않습니다. 운영 반영 시 주석 해제 — 아래 안내 참고)
 #
-# 수동 실행은 API(POST /api/jobs/discover/saramin/didim)로 가능합니다. 스케줄러와 수동 실행 모두
-# 같은 service(job_posting_discovery_service.discover_saramin_didim)를 호출합니다.
+# 수동 실행은 API(POST /api/jobs/discover/saramin)로 가능합니다. 스케줄러와 수동 실행 모두
+# 같은 service(job_posting_discovery_service.discover_saramin)를 호출합니다.
 
 
 def _resolve_system_user(db):
@@ -21,8 +21,8 @@ def _resolve_system_user(db):
     )
 
 
-def run_saramin_didim_discovery():
-    """스케줄러/배치 진입점. 시스템 ADMIN 권한으로 디딤(주) 신규 공고를 수집·등록합니다.
+def run_saramin_discovery():
+    """스케줄러/배치 진입점. 시스템 ADMIN 권한으로 대상 회사 신규 공고를 수집·등록합니다.
     배치가 실패해도 예외를 전파하지 않습니다(로그만 남김). 반환: 요약 dict 또는 None."""
     db = SessionLocal()
     try:
@@ -30,7 +30,7 @@ def run_saramin_didim_discovery():
         if not user:
             _log("[saramin-discovery] 활성 ADMIN 계정이 없어 배치를 건너뜁니다.")
             return None
-        return job_posting_discovery_service.discover_saramin_didim(db, user)
+        return job_posting_discovery_service.discover_saramin(db, user)
     except Exception as e:
         # 민감정보/HTML 은 로그에 남기지 않습니다. 실패 유형만 기록.
         _log(f"[saramin-discovery] 배치 실패: {type(e).__name__}: {e}")
@@ -39,7 +39,7 @@ def run_saramin_didim_discovery():
         db.close()
 
 
-def run_jobkorea_didim_discovery():
+def run_jobkorea_discovery():
     """스케줄러/배치 진입점(잡코리아). 사람인과 동일 구조 — 시스템 ADMIN 권한으로 수집·등록합니다.
     배치가 실패해도 예외를 전파하지 않습니다(로그만 남김). 반환: 요약 dict 또는 None."""
     db = SessionLocal()
@@ -48,7 +48,7 @@ def run_jobkorea_didim_discovery():
         if not user:
             _log("[jobkorea-discovery] 활성 ADMIN 계정이 없어 배치를 건너뜁니다.")
             return None
-        return job_posting_discovery_service.discover_jobkorea_didim(db, user)
+        return job_posting_discovery_service.discover_jobkorea(db, user)
     except Exception as e:
         _log(f"[jobkorea-discovery] 배치 실패: {type(e).__name__}: {e}")
         return None
@@ -76,19 +76,19 @@ def run_jobkorea_didim_discovery():
 #         return _scheduler
 #     _scheduler = BackgroundScheduler(timezone="Asia/Seoul")
 #     _scheduler.add_job(
-#         run_saramin_didim_discovery,
+#         run_saramin_discovery,
 #         "interval",
 #         hours=1,
-#         id="discover_saramin_didim_jobs",
+#         id="discover_saramin_jobs",
 #         replace_existing=True,
 #         max_instances=1,   # 이전 실행이 안 끝났으면 겹쳐 실행하지 않음
 #         coalesce=True,     # 밀린 실행은 한 번으로 합침
 #     )
 #     _scheduler.add_job(
-#         run_jobkorea_didim_discovery,
+#         run_jobkorea_discovery,
 #         "interval",
 #         hours=1,
-#         id="discover_jobkorea_didim_jobs",
+#         id="discover_jobkorea_jobs",
 #         replace_existing=True,
 #         max_instances=1,
 #         coalesce=True,

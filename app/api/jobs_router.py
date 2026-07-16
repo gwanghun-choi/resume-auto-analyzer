@@ -22,9 +22,9 @@ router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 def extract_from_url(body: JobExtractRequest,
                      current_user: User = Depends(get_current_user)):
     """
-    공고 URL 페이지를 가져와 (디딤(주) 공고 검증 후) LLM 으로 공고명/플랫폼/주요업무/자격요건/우대사항을 추출합니다.
+    공고 URL 페이지를 가져와 (대상 회사 공고 검증 후) LLM 으로 공고명/플랫폼/주요업무/자격요건/우대사항을 추출합니다.
     - 권한: 공고/JD 등록·수정 권한자(ADMIN/MANAGER)만. VIEWER 403. (URL 조회/LLM 호출 전에 검사)
-    - 디딤(주) 공고가 아니면 company_verified=false 로 반환(LLM 미호출, 입력값 미변경).
+    - 대상 회사 공고가 아니면 company_verified=false 로 반환(LLM 미호출, 입력값 미변경).
     """
     # 권한 검사 — URL 조회/LLM 호출 전에 수행
     role = (current_user.role_code or "").upper()
@@ -55,14 +55,14 @@ def extract_from_url(body: JobExtractRequest,
         )
 
 
-@router.post("/discover/saramin/didim")
-def discover_saramin_didim(dry_run: bool = False,
-                           current_user: User = Depends(get_current_user),
-                           db: Session = Depends(get_db)):
-    """사람인 '디딤' 검색 결과에서 디딤(주) 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
+@router.post("/discover/saramin")
+def discover_saramin(dry_run: bool = False,
+                     current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """사람인 검색 결과에서 대상 회사 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
 
     - 권한: ADMIN/MANAGER 만(VIEWER 403). 스케줄러(자동 1시간 주기)는 코드상 주석 처리 상태입니다.
-    - 흐름: 검색결과 수집 → 디딤(주) 필터 → detail_url 중복 확인 → 신규만 공고 insert(DRAFT)
+    - 흐름: 검색결과 수집 → 대상 회사 필터 → detail_url 중복 확인 → 신규만 공고 insert(DRAFT)
             → JD 분석 task enqueue(posting_id) → 공고 상태 JD_QUEUED.
       실제 상세 URL 분석/JD 저장/Drive 폴더 생성은 **Celery worker** 가 비동기로 수행합니다
       (job_extract_service / job_posting_service 재사용).
@@ -73,7 +73,7 @@ def discover_saramin_didim(dry_run: bool = False,
     if role not in ("ADMIN", "MANAGER"):
         raise HTTPException(status_code=403, detail="공고 자동 수집 권한이 없습니다.")
     try:
-        return job_posting_discovery_service.discover_saramin_didim(db, current_user, dry_run=dry_run)
+        return job_posting_discovery_service.discover_saramin(db, current_user, dry_run=dry_run)
     except SaraminCollectError as e:
         # 검색 페이지 fetch/parse 실패 등 수집 자체 실패. 민감정보는 메시지에 포함하지 않음.
         _log(f"[saramin-discovery] collect error step={e.step} status={e.status_code}")
@@ -92,11 +92,11 @@ def discover_saramin_didim(dry_run: bool = False,
         )
 
 
-@router.post("/discover/jobkorea/didim")
-def discover_jobkorea_didim(dry_run: bool = False,
-                            current_user: User = Depends(get_current_user),
-                            db: Session = Depends(get_db)):
-    """잡코리아 '디딤(주)' 검색 결과에서 디딤(주) 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
+@router.post("/discover/jobkorea")
+def discover_jobkorea(dry_run: bool = False,
+                      current_user: User = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    """잡코리아 검색 결과에서 대상 회사 신규 공고를 수집·등록하고 JD 분석을 큐에 넣습니다(수동 실행).
 
     사람인과 동일한 등록/큐 로직을 재사용하며 platform_code=JOBKOREA 로 저장됩니다.
     잡코리아 검색 결과는 서버 렌더링(SSR)이라 정적 HTML 로 수집합니다(Playwright 미사용).
@@ -106,7 +106,7 @@ def discover_jobkorea_didim(dry_run: bool = False,
     if role not in ("ADMIN", "MANAGER"):
         raise HTTPException(status_code=403, detail="공고 자동 수집 권한이 없습니다.")
     try:
-        return job_posting_discovery_service.discover_jobkorea_didim(db, current_user, dry_run=dry_run)
+        return job_posting_discovery_service.discover_jobkorea(db, current_user, dry_run=dry_run)
     except JobKoreaCollectError as e:
         _log(f"[jobkorea-discovery] collect error step={e.step} status={e.status_code}")
         return JSONResponse(

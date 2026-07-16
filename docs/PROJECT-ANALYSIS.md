@@ -18,7 +18,7 @@
 | DB | PostgreSQL, 스키마 `resume_ai`, Alembic + 수동 SQL 이원 관리 |
 | AI/LLM | OpenAI **`gpt-4.1-mini`**(기본) — 이력서 분석, JD 추천, 공고 URL 추출 |
 | 외부 연동 | Google Drive(OAuth) — 이력서 업로드/이동, 부서/공고 폴더 동기화 |
-| 배포 | Docker / Docker Compose, NCP 서버 배포, 사내 Fortinet Root CA 대응 |
+| 배포 | Docker / Docker Compose (사설 Root CA 선택 지원) |
 | 권한 | RBAC 3단계 — ADMIN / MANAGER / VIEWER |
 
 ### 아키텍처 전환 중 (핵심 맥락)
@@ -120,7 +120,7 @@ app/
 ### 5.1 AI / LLM 파이프라인
 
 - **`openai_llm_service.py`** — OpenAI 호출 단일 진입점. 모델 기본 **`gpt-4.1-mini`**(`OPENAI_MODEL` env). **Responses API 우선 → Chat Completions fallback**. `call_openai_json()`이 코드블록/잡텍스트 제거 후 `json.loads`. 예외를 step 코드(`openai_auth_failed`/`openai_model_invalid`/`openai_rate_limited`/`openai_network_failed`)로 분류. API 키는 로그/에러에서 마스킹.
-  - **SSL 특이점**: 프로젝트가 사내 Fortinet CA로 `SSL_CERT_FILE`을 고정하므로, 공개 CA 서명인 `api.openai.com` 검증 실패를 피하려 OpenAI 전용 httpx 클라이언트를 **certifi 공개 CA 번들**로 별도 구성.
+  - **SSL 특이점**: 프로젝트가 사설 Root CA로 `SSL_CERT_FILE`을 고정하므로, 공개 CA 서명인 `api.openai.com` 검증 실패를 피하려 OpenAI 전용 httpx 클라이언트를 **certifi 공개 CA 번들**로 별도 구성.
 - **`ai_agent_service.py`** — 이력서 텍스트를 OpenAI로 분석(기존 LangGraph+Gemini에서 OpenAI로 교체, JSON 구조 유지). 반환: `candidate_summary`, `extracted_skills`, `career_summary`, `strengths`, `weaknesses`, `recommendation`, **`ai_judgment_score`(0~10)**.
 - **`matching_service.py`** — 점수 산출(LLM 없는 순수 로직). **매칭 점수 = 100점 만점**:
   - 필수 기술 `matched/total × 70`
@@ -130,7 +130,7 @@ app/
 - **`resume_parser_service.py`** — `pypdf`(PDF)/`python-docx`(DOCX) 텍스트 추출.
 - **`resume_analysis_service.py`** — **분석 파이프라인 오케스트레이터(핵심)**. `analyze_pending`(부서 기준)/`analyze_posting`(공고 기준) 진입점. 파일 1건 처리(`_process_one_db`): `set_processing` → Drive 다운로드 → 텍스트 추출(최대 20,000자 절단) → `AiAgentService.analyze` → `MatchingService` 점수 → completed/failed 이동 → `save_result`(결과 insert + resume_files update 한 트랜잭션). 추천 문구: ≥80 "우선 검토 추천", ≥60 "추가 검토 필요", 그 외 "낮은 적합도"(탈락 표현 금지).
 - **`jd_recommend_service.py`** — 부서명/포지션명으로 JD 초안(설명·필수·우대 기술) 생성. DB 저장 없이 입력란 채우기용.
-- **`job_extract_service.py`** — 공고 URL → JD 자동 추출. **SSRF 방어**(http/https만, 해석된 IP가 공인인지 검사, private/loopback/link-local 차단, 리다이렉트 매 hop 재검증, 응답 2MB/LLM 15,000자 제한). **디딤(주) 공고로 검증된 경우에만** LLM 호출. JD 본문 수집 fallback: 정적 HTML → 사람인 상세 iframe → 동일 출처 iframe. 플랫폼은 URL 도메인 기준, 공고명은 `og:title`/`<title>` 우선. Playwright 미사용.
+- **`job_extract_service.py`** — 공고 URL → JD 자동 추출. **SSRF 방어**(http/https만, 해석된 IP가 공인인지 검사, private/loopback/link-local 차단, 리다이렉트 매 hop 재검증, 응답 2MB/LLM 15,000자 제한). **대상 회사 공고로 검증된 경우에만** LLM 호출. JD 본문 수집 fallback: 정적 HTML → 사람인 상세 iframe → 동일 출처 iframe. 플랫폼은 URL 도메인 기준, 공고명은 `og:title`/`<title>` 우선. Playwright 미사용.
 
 ### 5.2 Google Drive 통합
 
@@ -253,10 +253,10 @@ departments (id: str)
 
 - **로컬**: `run.sh` → `uv sync` 후 `uv run uvicorn app.main:app --reload`. Python 3.12, 패키지 관리자 `uv`(`uv.lock`), build-backend `uv_build`.
 - **Docker**: `python:3.12-slim` 기반. curl/ca-certificates/build-essential 설치, **회사 Root CA 등록** 후 `pip install uv` → `uv sync --frozen --no-dev --no-install-project`(의존성만). `CMD uvicorn app.main:app --host 0.0.0.0 --port 8000`(운영은 `--reload` 없음).
-- **Compose**: 서비스 `resume-ai`, 포트 **`28080:8000`**, `restart: unless-stopped`, `env_file: .env`. 볼륨 `./secrets/google:/app/secrets/google`(OAuth 시크릿), `./data:/app/data`. Healthcheck `curl -f http://localhost:8000/`. NCP에 복사 후 `docker compose up -d --build`.
+- **Compose**: 서비스 `resume-ai`, 포트 **`28080:8000`**, `restart: unless-stopped`, `env_file: .env`. 볼륨 `./secrets/google:/app/secrets/google`(OAuth 시크릿), `./data:/app/data`. Healthcheck `curl -f http://localhost:8000/`. 서버에 복사 후 `docker compose up -d --build`.
 - **`.dockerignore`**: `.env*`(단 `.env.example` 예외)·`secrets`·`credentials.json`·`token.json`·`*.tar.gz` 제외 — **시크릿은 이미지 미포함, runtime 볼륨 주입**.
 - **Google OAuth**: `credentials.json`(클라이언트) + `token.json`(토큰) — compose 볼륨(`/app/secrets/google/...`) 마운트.
-- **사내 CA(Fortinet)**: `certs/company-root-ca.crt`(FortiGate SSL-inspection Root CA). Dockerfile이 시스템 번들에 병합(`update-ca-certificates`), `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`(+`HTTPLIB2_CA_CERTS`)를 `/etc/ssl/certs/ca-certificates.crt`로 지정 → requests/httplib2/googleapiclient가 사내 CA 신뢰.
+- **사설 CA(선택)**: `certs/*.crt`(SSL inspection 대응, Git 제외). Dockerfile이 시스템 번들에 병합(`update-ca-certificates`), `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`(+`HTTPLIB2_CA_CERTS`)를 `/etc/ssl/certs/ca-certificates.crt`로 지정 → requests/httplib2/googleapiclient가 해당 CA 신뢰.
 - **부트스트랩**: `scripts/hash_existing_dummy_passwords.py` — 더미 계정 평문 password_hash를 bcrypt로 일회성 전환(이미 bcrypt면 skip).
 
 ### 주요 환경변수
@@ -267,7 +267,7 @@ departments (id: str)
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | JD 추천/이력서 분석 LLM (기본 `gpt-4.1-mini`) |
 | `DB_HOST/PORT/NAME/USER/PASSWORD/SCHEMA` 또는 `DATABASE_URL` | PostgreSQL 접속 (`DATABASE_URL` 우선) |
 | `GOOGLE_CREDENTIALS_PATH`, `GOOGLE_TOKEN_PATH` | Google OAuth 파일 경로 |
-| `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` (+`HTTPLIB2_CA_CERTS`) | 사내 Root CA 번들 경로 |
+| `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` (+`HTTPLIB2_CA_CERTS`) | CA 번들 경로 |
 | `DB_ECHO` | SQL 로그 on/off |
 
 ---

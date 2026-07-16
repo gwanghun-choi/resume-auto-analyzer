@@ -2932,7 +2932,7 @@ async function recommendPostingJd() {
     }
 }
 
-// ----- 공고 URL 기반 자동 채우기 (디딤(주) 공고만) -----
+// ----- 공고 URL 기반 자동 채우기 (대상 회사 공고만) -----
 // 덮어쓰기/자동 채우기 대상(부서/팀·상태는 제외). 값 존재 여부 검사 + 교체에 사용.
 const EXTRACT_TARGET_IDS = ['postingTitle', 'postingPlatform', 'jdContent', 'jdRequired', 'jdPreferred'];
 
@@ -2983,10 +2983,10 @@ async function extractFromUrl() {
             return;
         }
         if (!data.company_verified) {
-            // 디딤(주) 공고가 아니면 어떤 필드도 덮어쓰지 않음
+            // 대상 회사 공고가 아니면 어떤 필드도 덮어쓰지 않음
             msg.className = 'hint text-danger';
             msg.textContent = data.warning
-                || '디딤(주) 공고로 확인되지 않아 자동 입력을 중단했습니다. 공고 URL을 다시 확인해주세요.';
+                || '대상 회사 공고로 확인되지 않아 자동 입력을 중단했습니다. 공고 URL을 다시 확인해주세요.';
             return;
         }
         applyExtractResult(data);

@@ -35,10 +35,10 @@ FROM resume_ai.job_posting_jds ORDER BY id DESC LIMIT 10;
 
 ## 테스트 방법
 ```
-cd /mnt/d/workspace_ref/langgraph-gemini-resume-demo
+cd <프로젝트 루트>
 uv run uvicorn app.main:app --reload   # http://localhost:8000 (브라우저 하드 새로고침으로 v49 로드)
 ```
-공고/JD 관리 → 공고 등록 → URL 입력 → [공고 내용 가져오기](디딤 공고면 JD 3개+플랫폼 채움, 값 있으면 confirm) → 공고 등록 클릭(Network 에서 `/api/job-postings` + `/{id}/jd` 호출, JD body 포함 확인).
+공고/JD 관리 → 공고 등록 → URL 입력 → [공고 내용 가져오기](대상 회사 공고면 JD 3개+플랫폼 채움, 값 있으면 confirm) → 공고 등록 클릭(Network 에서 `/api/job-postings` + `/{id}/jd` 호출, JD body 포함 확인).
 
 ## 테스트 결과 (라이브 DB+Drive, ADMIN)
 - `node --check` 통과, 함수 중복 정의 없음, JD 카드 hidden 미조작(항상 표시).

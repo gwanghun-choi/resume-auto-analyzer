@@ -1,10 +1,10 @@
 # 사람인 JD 자동 채우기 — 상세 iframe fallback 수집 + 수집 실패 reason code
 
 - **작업 일시**: 2026-06-12
-- **작업 목적**: 사람인 디딤(주) 공고 URL 에서 JD 3개(주요 업무/자격 요건/우대 사항)가 채워지지 않던 문제 해결. JD 본문이 메인 페이지가 아니라 **JS 로 로드되는 iframe(`relay/view-detail`)** 에 있음을 확인하고, **정적 fetch fallback**으로 수집하도록 수집 구조를 개선.
+- **작업 목적**: 사람인 대상 회사 공고 URL 에서 JD 3개(주요 업무/자격 요건/우대 사항)가 채워지지 않던 문제 해결. JD 본문이 메인 페이지가 아니라 **JS 로 로드되는 iframe(`relay/view-detail`)** 에 있음을 확인하고, **정적 fetch fallback**으로 수집하도록 수집 구조를 개선.
 
 ## 핵심 원인 / 해결 (Playwright 미도입)
-- 진단: `https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=...` 의 **정적 HTML(388KB)** 에는 "디딤"은 있으나 **주요 업무/자격요건/우대사항이 없음**(상세 본문은 `about:blank` iframe 에 JS 로 주입).
+- 진단: `https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=...` 의 **정적 HTML(388KB)** 에는 회사명은 있으나 **주요 업무/자격요건/우대사항이 없음**(상세 본문은 `about:blank` iframe 에 JS 로 주입).
 - 발견: JD 본문은 **`/zf_user/jobs/relay/view-detail?rec_idx=...`** (12.5KB, **정적으로 fetch 가능**)에 그대로 존재 → 주요 업무/자격요건/우대사항 모두 포함.
 - 결론: **Playwright/Selenium 불필요.** 상세 iframe URL 을 정적 fetch 하는 fallback 으로 목표 달성(가볍고 Docker/이미지 변경 없음). → pyproject/Dockerfile 변경 없음.
 
@@ -41,7 +41,7 @@
 uv run uvicorn app.main:app --reload   # http://localhost:8000 (브라우저 하드 새로고침 v51)
 ```
 - **라이브(테스트 URL `rec_idx=53886522`, ADMIN)**: `company_verified=true`, **`collector_method=SARAMIN_DETAIL`**, `job_title="IDC 인프라 엔지니어"`, **main_tasks/qualifications/preferred 3개 모두 채워짐**(주요 업무 7항목/자격요건 4항목/우대사항 8항목, bullet 제거), `warning=None`.
-- 회귀: 비-디딤(example.com) → `company_verified=false`, `debug_reason=COMPANY_NOT_VERIFIED`, LLM 미호출. `py_compile`/`node --check`/CSS 균형 통과.
+- 회귀: 대상 회사가 아닌 URL(example.com) → `company_verified=false`, `debug_reason=COMPANY_NOT_VERIFIED`, LLM 미호출. `py_compile`/`node --check`/CSS 균형 통과.
 - DB 확인(공고+JD 저장): `SELECT id, posting_id, title, required_skills, preferred_skills, jd_content FROM resume_ai.job_posting_jds ORDER BY id DESC LIMIT 10;` (required/preferred=JSONB 배열, 주요 업무=jd_content — 직전 작업 E2E 확인).
 
 ## 남은 이슈 / 운영 고려
