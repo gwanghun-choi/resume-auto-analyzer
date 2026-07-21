@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import func
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.job_description import JobDescription
 
 # LEGACY: legacy job_descriptions(부서별 JD) 테이블 전용 서비스. 공고 중심 전환으로 신규 개발 대상이 아닙니다.
@@ -31,9 +31,9 @@ def _to_dict(r: JobDescription) -> dict:
     }
 
 
-def list_by_dept(dept_id: str) -> list:
+def list_by_dept(dept_id: str, session=None) -> list:
     """부서의 JD 전체(버전 포함)를 최신순으로 반환합니다."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         rows = (
             session.query(JobDescription)
@@ -43,22 +43,24 @@ def list_by_dept(dept_id: str) -> list:
         )
         return [_to_dict(r) for r in rows]
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_by_id(jd_id: int) -> dict:
+def get_by_id(jd_id: int, session=None) -> dict:
     """JD 1건을 id 로 조회합니다. 없으면 None. (수정/삭제 권한 체크용 dept_id 확인 등)"""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         r = session.query(JobDescription).filter(JobDescription.id == jd_id).first()
         return _to_dict(r) if r else None
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_active(dept_id: str) -> dict:
+def get_active(dept_id: str, session=None) -> dict:
     """부서의 현재 active JD 1건을 반환합니다. 없으면 None."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         r = (
             session.query(JobDescription)
@@ -68,16 +70,17 @@ def get_active(dept_id: str) -> dict:
         )
         return _to_dict(r) if r else None
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def create(dept_id: str, title, description, required_skills, preferred_skills,
-           min_years) -> dict:
+           min_years, session=None) -> dict:
     """
     부서의 새 active JD 를 등록합니다. (기존 active 는 is_active=false 로 내림)
     version 은 부서 내 최대 version+1. 트랜잭션, 실패 시 rollback.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         session.query(JobDescription).filter(
             JobDescription.dept_id == dept_id, JobDescription.is_active.is_(True)
@@ -101,14 +104,15 @@ def create(dept_id: str, title, description, required_skills, preferred_skills,
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def update(jd_id: int, fields: dict) -> dict:
+def update(jd_id: int, fields: dict, session=None) -> dict:
     """JD 1건을 수정합니다. 없으면 None."""
     allowed = {"title", "description", "required_skills", "preferred_skills",
                "min_years", "is_active"}
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         jd = session.query(JobDescription).filter(JobDescription.id == jd_id).first()
         if not jd:
@@ -124,12 +128,13 @@ def update(jd_id: int, fields: dict) -> dict:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def deactivate(jd_id: int) -> bool:
+def deactivate(jd_id: int, session=None) -> bool:
     """JD 1건을 soft delete(is_active=false) 합니다. 대상이 없으면 False."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         jd = session.query(JobDescription).filter(JobDescription.id == jd_id).first()
         if not jd:
@@ -142,7 +147,8 @@ def deactivate(jd_id: int) -> bool:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 # status_by_department(부서별 JD 등록 현황)은 공고/JD 중심 전환으로

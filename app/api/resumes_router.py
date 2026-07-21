@@ -179,7 +179,7 @@ def pending_uploads(dept_id: str = "",
         # 전체 부서: 권한 범위 부서 id 목록(ADMIN=None=전체, MANAGER/VIEWER=리스트)으로 백엔드 필터링
         allowed_ids = department_access_service.get_accessible_department_ids(db, current_user)
         try:
-            return resume_upload_db_service.get_pending_uploads_for_scope(allowed_ids)
+            return resume_upload_db_service.get_pending_uploads_for_scope(allowed_ids, session=db)
         except Exception as e:
             _log(f"[pending-uploads] (scope=all) DB 조회 실패: {type(e).__name__}: {e}")
             return _error(
@@ -189,7 +189,7 @@ def pending_uploads(dept_id: str = "",
     # 특정 부서: ADMIN 전체 / MANAGER·VIEWER 본인 하위만 (권한 밖 dept_id 는 403)
     ensure_department_access(db, current_user, dept_id)
     try:
-        return resume_upload_db_service.get_pending_uploads_from_db(dept_id)
+        return resume_upload_db_service.get_pending_uploads_from_db(dept_id, session=db)
     except Exception as e:
         _log(f"[pending-uploads] DB 조회 실패: {type(e).__name__}: {e}")
         return _error(
@@ -207,7 +207,7 @@ def debug_pending(dept_id: str = "",
         return _error("request", "dept_id가 전달되지 않았습니다.", "부서/팀을 먼저 선택해주세요.")
     ensure_department_access(db, current_user, dept_id)
     try:
-        return resume_upload_db_service.get_pending_debug(dept_id)
+        return resume_upload_db_service.get_pending_debug(dept_id, session=db)
     except Exception as e:
         _log(f"[debug-pending] DB 조회 실패: {type(e).__name__}: {e}")
         return _error(
@@ -250,6 +250,7 @@ def resume_status_list(dept_id: str = "", analysis_status: str = "", recommendat
             allowed_dept_ids=allowed_ids,
             posting_id=(int(posting_id) if posting_id else None),
             posting_keyword=posting_keyword or None,
+            session=db,
         )
     except Exception as e:
         _log(f"[resume-status] 목록 DB 조회 실패: {type(e).__name__}: {e}")
@@ -276,6 +277,7 @@ def resume_status_export_excel(dept_id: str = "", analysis_status: str = "", rec
             allowed_dept_ids=allowed_ids,
             posting_id=(int(posting_id) if posting_id else None),
             posting_keyword=posting_keyword or None,
+            session=db,
         )
         bio = build_status_excel(rows)
         filename = f"resume_status_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -300,7 +302,7 @@ def resume_status_detail(resume_file_id: int,
     # 권한 부서 계산 (ADMIN=None). HTTPException(400/404) 은 try 밖에서 전파.
     allowed_ids = department_access_service.get_accessible_department_ids(db, current_user)
     try:
-        detail = resume_status_db_service.get_status_detail(resume_file_id)
+        detail = resume_status_db_service.get_status_detail(resume_file_id, session=db)
     except Exception as e:
         _log(f"[resume-status] 상세 DB 조회 실패: {type(e).__name__}: {e}")
         return _error(
@@ -328,7 +330,7 @@ def download_resume_file(resume_file_id: int,
     - 존재하지 않는 파일 404, drive_file_id 없으면 404
     - DB 의 원본 파일명으로 attachment 반환 (한글 파일명은 UTF-8 filename*)
     """
-    meta = resume_status_db_service.get_file_for_download(resume_file_id)
+    meta = resume_status_db_service.get_file_for_download(resume_file_id, session=db)
     if not meta:
         raise HTTPException(status_code=404, detail="이력서를 찾을 수 없습니다.")
 
@@ -487,7 +489,7 @@ def posting_pending_counts(current_user: User = Depends(get_current_user),
                            db: Session = Depends(get_db)):
     """권한 범위 공고별 분석 대기 건수 맵 {posting_id: count}. (분석 작업 관리 공고 리스트용)"""
     allowed_ids = department_access_service.get_accessible_department_ids(db, current_user)
-    return resume_analysis_db_service.get_posting_pending_counts(allowed_ids)
+    return resume_analysis_db_service.get_posting_pending_counts(allowed_ids, session=db)
 
 
 @router.get("/posting-pending/{posting_id}")
@@ -497,7 +499,7 @@ def posting_pending_files(posting_id: int, page: int = 1, size: int = 20,
     """선택 공고의 분석 대기 파일 목록(페이징). (조회 권한: ADMIN 전체 / MANAGER·VIEWER 본인 부서+하위)"""
     posting = job_posting_service.get_posting_entity(db, posting_id)
     department_access_service.ensure_department_access(db, current_user, posting.department_id)
-    return resume_analysis_db_service.get_posting_pending_view(posting_id, page=page, size=size)
+    return resume_analysis_db_service.get_posting_pending_view(posting_id, page=page, size=size, session=db)
 
 
 @router.post("/analyze-posting")
@@ -514,7 +516,7 @@ def analyze_posting(body: AnalyzePostingRequest,
         return _error("active_jd_not_found", "공고에 등록된 활성 JD가 없습니다.",
                       "공고 상세에서 JD를 먼저 등록해주세요.")
     # 중복 enqueue 방지: 진행 중(PROCESSING)이면 skip, 대기(PENDING) 없으면 enqueue 안 함
-    counts = resume_analysis_db_service.get_posting_analysis_status_counts(body.posting_id)
+    counts = resume_analysis_db_service.get_posting_analysis_status_counts(body.posting_id, session=db)
     if counts["processing"] > 0:
         return {"status": "ALREADY_PROCESSING", "posting_id": body.posting_id,
                 "queue": RESUME_ANALYSIS_QUEUE,
@@ -550,7 +552,7 @@ def analyze_selected(body: AnalyzeSelectedRequest,
         return _error("no_selection", "분석할 항목을 선택해주세요.",
                       "테이블에서 분석할 파일을 1개 이상 선택해주세요.")
 
-    rows = resume_analysis_db_service.get_files_dept_and_status(ids)
+    rows = resume_analysis_db_service.get_files_dept_and_status(ids, session=db)
     found = {r["id"] for r in rows}
     missing = [i for i in ids if i not in found]
     if missing:
@@ -607,7 +609,7 @@ def analyze_all(current_user: User = Depends(get_current_user),
     if role != "ADMIN":
         raise HTTPException(status_code=403, detail="전체 분석은 관리자(ADMIN)만 실행할 수 있습니다.")
     # ADMIN: 전체 공고. 분석 대기(PENDING)가 있는 공고만 대상으로 계산.
-    counts = resume_analysis_db_service.get_posting_pending_counts(None)
+    counts = resume_analysis_db_service.get_posting_pending_counts(None, session=db)
     posting_ids = list(counts.keys())
     if not posting_ids:
         return {"status": "NO_PENDING", "message": "분석 대기 파일이 없습니다.",

@@ -68,7 +68,7 @@ def create_jd(
         jd = jd_db_service.create(
             dept_id=body.dept_id, title=body.title, description=body.description,
             required_skills=body.required_skills, preferred_skills=body.preferred_skills,
-            min_years=body.min_years,
+            min_years=body.min_years, session=db,
         )
     except Exception as e:
         return _error("jd_db", f"{type(e).__name__}: {e}", "DB 연결 상태를 확인해주세요.")
@@ -86,14 +86,14 @@ def update_jd(
     # 수정 대상 JD 의 부서(dept_id) 기준으로 권한을 먼저 확인합니다.
     # (JDUpdateRequest 에는 dept_id 가 없어 부서 변경은 불가하므로 기존 부서만 검사)
     try:
-        existing = jd_db_service.get_by_id(jd_id)
+        existing = jd_db_service.get_by_id(jd_id, session=db)
     except Exception as e:
         return _error("jd_db", f"{type(e).__name__}: {e}", "DB 연결 상태를 확인해주세요.")
     if not existing:
         return _error("not_found", f"JD {jd_id} 를 찾을 수 없습니다.", "jd_id 를 확인해주세요.", status_code=404)
     ensure_can_manage_jd(db, current_user, existing["dept_id"])
     try:
-        jd = jd_db_service.update(jd_id, body.model_dump(exclude_unset=True))
+        jd = jd_db_service.update(jd_id, body.model_dump(exclude_unset=True), session=db)
     except Exception as e:
         return _error("jd_db", f"{type(e).__name__}: {e}", "DB 연결 상태를 확인해주세요.")
     if not jd:
@@ -109,14 +109,14 @@ def delete_jd(
 ):
     """JD 1건을 비활성화(soft delete)합니다. (물리 삭제 아님. 대상 JD 부서 기준 권한 검사)"""
     try:
-        existing = jd_db_service.get_by_id(jd_id)
+        existing = jd_db_service.get_by_id(jd_id, session=db)
     except Exception as e:
         return _error("jd_db", f"{type(e).__name__}: {e}", "DB 연결 상태를 확인해주세요.")
     if not existing:
         return _error("not_found", f"JD {jd_id} 를 찾을 수 없습니다.", "jd_id 를 확인해주세요.", status_code=404)
     ensure_can_manage_jd(db, current_user, existing["dept_id"])
     try:
-        ok = jd_db_service.deactivate(jd_id)
+        ok = jd_db_service.deactivate(jd_id, session=db)
     except Exception as e:
         return _error("jd_db", f"{type(e).__name__}: {e}", "DB 연결 상태를 확인해주세요.")
     if not ok:

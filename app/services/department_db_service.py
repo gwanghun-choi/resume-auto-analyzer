@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.department import Department
 from app.services.dept_config_service import build_department_tree
 
@@ -54,7 +54,7 @@ def _to_row(d: dict, now: datetime) -> dict:
     }
 
 
-def upsert_departments(departments: list) -> dict:
+def upsert_departments(departments: list, session=None) -> dict:
     """
     departments(정규화된 배열)를 resume_ai.departments 에 id 기준 upsert 합니다.
     - JSON 에서 사라진 부서는 삭제하지 않습니다.
@@ -66,7 +66,7 @@ def upsert_departments(departments: list) -> dict:
     rows = [r for r in rows if r["id"] and r["name"]]
     skipped = len(departments) - len(rows)
 
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         existing_ids = {r[0] for r in session.query(Department.id).all()}
         inserted = sum(1 for r in rows if r["id"] not in existing_ids)
@@ -83,14 +83,15 @@ def upsert_departments(departments: list) -> dict:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
     return {"inserted": inserted, "updated": updated, "skipped": skipped, "total": len(rows)}
 
 
-def get_departments(active_only: bool = False) -> list:
+def get_departments(active_only: bool = False, session=None) -> list:
     """resume_ai.departments 부서 목록을 dict 리스트로 반환합니다."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         query = session.query(Department)
         if active_only:
@@ -101,17 +102,19 @@ def get_departments(active_only: bool = False) -> list:
             for r in query.all()
         ]
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_tree(active_only: bool = True) -> list:
+def get_tree(active_only: bool = True, session=None) -> list:
     """DB departments 로 부서 트리(중첩 구조)를 구성합니다. (기본: status=1 만)"""
-    return build_department_tree(get_departments(active_only=active_only))
+    return build_department_tree(get_departments(active_only=active_only, session=session))
 
 
-def count() -> int:
-    session = SessionLocal()
+def count(session=None) -> int:
+    session, _own = resolve_session(session)
     try:
         return session.query(Department).count()
     finally:
-        session.close()
+        if _own:
+            session.close()

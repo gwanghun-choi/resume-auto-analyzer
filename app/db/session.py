@@ -35,3 +35,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def resolve_session(session=None):
+    """
+    db_service 공용 세션 해석기.
+
+    - session 이 주어지면(예: FastAPI get_db 로 주입된 '요청 세션') 그대로 재사용하고,
+      (own=False) 호출부가 close 하지 않습니다. 세션 생명주기는 주입한 쪽(get_db)이 소유합니다.
+      → 한 요청 안에서 라우터의 주입 세션과 db_service 가 여는 세션이 분리되어
+        읽기/트랜잭션이 비일관해지던 문제를 없앱니다.
+    - session 이 없으면(Celery task/서비스 클래스 등 '요청 밖') 새 세션을 열고(own=True),
+      호출부가 finally 에서 close 합니다. (기존 동작과 동일 — 하위 호환)
+
+    반환: (session, own)  — own 이 True 인 경우에만 호출부가 session.close() 해야 합니다.
+    """
+    if session is not None:
+        return session, False
+    return SessionLocal(), True

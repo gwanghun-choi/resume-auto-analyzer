@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.dept_drive_folder import DeptDriveFolder
 
 # dept_drive_folder_db_service 는 resume_ai.dept_drive_folders 테이블만 다룹니다.
@@ -17,7 +17,7 @@ _UPSERT_COLS = [
 
 def upsert_folder(dept_id: str, dept_name: str, folder_name: str,
                   inbox_folder_id: str, completed_folder_id: str,
-                  failed_folder_id: str) -> str:
+                  failed_folder_id: str, session=None) -> str:
     """
     dept_id 기준으로 폴더 매핑을 upsert 합니다. (트랜잭션, 실패 시 rollback)
     반환: 'inserted' 또는 'updated'
@@ -30,7 +30,7 @@ def upsert_folder(dept_id: str, dept_name: str, folder_name: str,
         "failed_folder_id": failed_folder_id,
         "synced_at": now,
     }
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         exists = session.query(DeptDriveFolder.id).filter(
             DeptDriveFolder.dept_id == dept_id
@@ -46,13 +46,14 @@ def upsert_folder(dept_id: str, dept_name: str, folder_name: str,
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
     return "updated" if exists else "inserted"
 
 
-def get_folder(dept_id: str) -> dict:
+def get_folder(dept_id: str, session=None) -> dict:
     """dept_id 의 폴더 매핑을 dict 로 반환합니다. 없으면 None."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         r = session.query(DeptDriveFolder).filter(
             DeptDriveFolder.dept_id == dept_id
@@ -68,12 +69,14 @@ def get_folder(dept_id: str) -> dict:
             "failed_folder_id": r.failed_folder_id,
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def count() -> int:
-    session = SessionLocal()
+def count(session=None) -> int:
+    session, _own = resolve_session(session)
     try:
         return session.query(DeptDriveFolder).count()
     finally:
-        session.close()
+        if _own:
+            session.close()

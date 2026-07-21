@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.resume_file import ResumeFile
 from app.db.models.resume_upload_batch import ResumeUploadBatch
 from app.db.models.resume_analysis_result import ResumeAnalysisResult
@@ -16,7 +16,7 @@ from app.db.models.department import Department
 
 
 def get_pending_files_for_analysis(dept_id: str, upload_id: str = None,
-                                   resume_file_ids: list = None) -> list:
+                                   resume_file_ids: list = None, session=None) -> list:
     """
     분석 대상(PENDING) 파일을 DB 에서 조회합니다.
     조건: dept_id, file_status=UPLOADED, analysis_status=PENDING.
@@ -24,7 +24,7 @@ def get_pending_files_for_analysis(dept_id: str, upload_id: str = None,
       - resume_file_ids 있으면 그 id 들만 (선택 항목 분석용; 부서 내에서 추가로 좁힘)
     이동에 필요한 batch 정보(upload_folder_name / drive_upload_folder_id)도 함께 반환합니다.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         query = (
             session.query(ResumeFile, ResumeUploadBatch)
@@ -58,17 +58,18 @@ def get_pending_files_for_analysis(dept_id: str, upload_id: str = None,
             })
         return out
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_files_dept_and_status(resume_file_ids: list) -> list:
+def get_files_dept_and_status(resume_file_ids: list, session=None) -> list:
     """
     resume_file_id 목록의 부서/공고/상태를 조회합니다. (선택 항목 분석의 권한·PENDING 재검증용)
     반환: [{id, dept_id, posting_id, file_status, analysis_status}]  (존재하는 것만)
     """
     if not resume_file_ids:
         return []
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         rows = (
             session.query(
@@ -84,19 +85,20 @@ def get_files_dept_and_status(resume_file_ids: list) -> list:
             for r in rows
         ]
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 # ===== 공고(posting) 기준 분석 =====
 
-def get_posting_analysis_context(posting_id: int) -> dict:
+def get_posting_analysis_context(posting_id: int, session=None) -> dict:
     """
     공고 기준 분석에 필요한 컨텍스트를 조회합니다.
     반환: {posting_id, department_id, dept_name, completed_folder_id, failed_folder_id,
            jd: {id, title, required_skills, preferred_skills, jd_content}} 또는 None(공고 없음).
     jd 가 None 이면 active JD 미등록.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         p = session.query(JobPosting).filter(JobPosting.id == posting_id).first()
         if not p:
@@ -124,16 +126,18 @@ def get_posting_analysis_context(posting_id: int) -> dict:
             } if jd else None),
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_pending_files_for_posting(posting_id: int, resume_file_ids: list = None) -> list:
+def get_pending_files_for_posting(posting_id: int, resume_file_ids: list = None,
+                                  session=None) -> list:
     """
     공고의 분석 대상(PENDING) 파일을 조회합니다.
     조건: resume_files.posting_id=posting_id, file_status=UPLOADED, analysis_status=PENDING.
     이동에 필요한 batch 정보(upload_folder_name / drive_upload_folder_id)도 함께 반환합니다.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         query = (
             session.query(ResumeFile, ResumeUploadBatch)
@@ -165,15 +169,17 @@ def get_pending_files_for_posting(posting_id: int, resume_file_ids: list = None)
             })
         return out
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_posting_pending_view(posting_id: int, page: int = 1, size: int = 20) -> dict:
+def get_posting_pending_view(posting_id: int, page: int = 1, size: int = 20,
+                             session=None) -> dict:
     """공고의 분석 대기 파일 목록(화면 표시용, 페이징).
     반환: {posting_id, total, page, size, pending_count(=total), files:[현재 페이지]}"""
     page = max(1, int(page))
     size = max(1, min(int(size or 20), 200))
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         base = (
             session.query(ResumeFile)
@@ -208,15 +214,16 @@ def get_posting_pending_view(posting_id: int, page: int = 1, size: int = 20) -> 
         return {"status": "OK", "posting_id": posting_id, "total": total,
                 "page": page, "size": size, "pending_count": total, "files": out}
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_posting_pending_counts(allowed_dept_ids: list = None) -> dict:
+def get_posting_pending_counts(allowed_dept_ids: list = None, session=None) -> dict:
     """
     공고별 분석 대기(PENDING) 파일 수를 반환합니다. ('공고 분석' 화면의 대기 건수 표시용)
     반환: {posting_id: pending_count}. allowed_dept_ids=None 이면 전체(ADMIN).
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         q = (
             session.query(ResumeFile.posting_id)
@@ -233,13 +240,14 @@ def get_posting_pending_counts(allowed_dept_ids: list = None) -> dict:
             counts[pid] = counts.get(pid, 0) + 1
         return counts
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_posting_analysis_status_counts(posting_id: int) -> dict:
+def get_posting_analysis_status_counts(posting_id: int, session=None) -> dict:
     """공고의 이력서 분석 상태별 건수(UPLOADED 파일 기준). 비동기 중복 enqueue 방지/대기 여부 판단용.
     반환: {"pending": n, "processing": n, "completed": n, "failed": n}."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         vals = [r[0] for r in session.query(ResumeFile.analysis_status).filter(
             ResumeFile.posting_id == posting_id,
@@ -252,15 +260,16 @@ def get_posting_analysis_status_counts(posting_id: int) -> dict:
             "failed": sum(1 for v in vals if v == "FAILED"),
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_pending_dept_ids(allowed_dept_ids: list = None) -> list:
+def get_pending_dept_ids(allowed_dept_ids: list = None, session=None) -> list:
     """
     분석 대기(PENDING) 파일이 있는 부서 id 목록(중복 제거)을 반환합니다. ('전체 분석' 대상 부서 계산용)
     allowed_dept_ids=None 이면 전체(ADMIN), 리스트면 해당 부서들로 제한(MANAGER).
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         q = (
             session.query(ResumeFile.dept_id)
@@ -274,12 +283,13 @@ def get_pending_dept_ids(allowed_dept_ids: list = None) -> list:
             q = q.filter(ResumeFile.dept_id.in_(allowed_dept_ids))
         return [r[0] for r in q.all()]
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def set_processing(resume_file_id: int) -> None:
+def set_processing(resume_file_id: int, session=None) -> None:
     """분석 시작 시 resume_files.analysis_status 를 PROCESSING 으로 바꿉니다."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         session.query(ResumeFile).filter(ResumeFile.id == resume_file_id).update(
             {ResumeFile.analysis_status: "PROCESSING", ResumeFile.updated_at: datetime.now()},
@@ -290,13 +300,14 @@ def set_processing(resume_file_id: int) -> None:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def save_result(file_meta: dict, analysis_id: str, success: bool, analysis: dict,
                 moved_to, move_status: str, moved_drive_file_id, analyzed_at: datetime,
                 error_code, error_message,
-                posting_id=None, jd_id=None, jd_snapshot=None) -> None:
+                posting_id=None, jd_id=None, jd_snapshot=None, session=None) -> None:
     """
     분석 결과를 한 트랜잭션으로 저장합니다.
       - resume_analysis_results insert (성공/실패 모두)
@@ -308,7 +319,7 @@ def save_result(file_meta: dict, analysis_id: str, success: bool, analysis: dict
     analysis_status = "COMPLETED" if success else "FAILED"
     score = int(round(analysis["score"])) if (success and analysis.get("score") is not None) else None
 
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         session.add(ResumeAnalysisResult(
             analysis_id=analysis_id,
@@ -359,7 +370,8 @@ def save_result(file_meta: dict, analysis_id: str, success: bool, analysis: dict
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def _batch_status(vals: list) -> str:
@@ -374,9 +386,9 @@ def _batch_status(vals: list) -> str:
     return "ANALYSIS_PARTIAL_FAILED"
 
 
-def update_batch_counts(upload_id: str) -> dict:
+def update_batch_counts(upload_id: str, session=None) -> dict:
     """upload_id 의 resume_files 를 집계해 batch 의 카운트/상태를 갱신합니다."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         vals = [r[0] for r in session.query(ResumeFile.analysis_status).filter(
             ResumeFile.upload_id == upload_id
@@ -402,12 +414,13 @@ def update_batch_counts(upload_id: str) -> dict:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_batch(upload_id: str) -> dict:
+def get_batch(upload_id: str, session=None) -> dict:
     """batch 의 폴더 정보를 반환합니다. (inbox 폴더 정리용)"""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         b = session.query(ResumeUploadBatch).filter(
             ResumeUploadBatch.upload_id == upload_id
@@ -420,12 +433,13 @@ def get_batch(upload_id: str) -> dict:
             "upload_folder_name": b.upload_folder_name,
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def save_batch_cleanup(upload_id: str, cleanup: dict) -> None:
+def save_batch_cleanup(upload_id: str, cleanup: dict, session=None) -> None:
     """inbox upload 폴더 정리 결과를 batch.inbox_upload_folder_cleanup(JSONB)에 저장합니다."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         session.query(ResumeUploadBatch).filter(ResumeUploadBatch.upload_id == upload_id).update(
             {ResumeUploadBatch.inbox_upload_folder_cleanup: cleanup,
@@ -437,4 +451,5 @@ def save_batch_cleanup(upload_id: str, cleanup: dict) -> None:
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()

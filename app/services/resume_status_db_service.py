@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import or_
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.resume_file import ResumeFile
 from app.db.models.resume_upload_batch import ResumeUploadBatch
 from app.db.models.resume_analysis_result import ResumeAnalysisResult
@@ -100,11 +100,12 @@ def _name_maps(session, files):
 
 def get_status_list(dept_id=None, analysis_status=None, recommendation=None,
                     keyword=None, date_from=None, date_to=None, page=1, size=20,
-                    allowed_dept_ids=None, posting_id=None, posting_keyword=None) -> dict:
+                    allowed_dept_ids=None, posting_id=None, posting_keyword=None,
+                    session=None) -> dict:
     """이력서 파일 목록을 DB(resume_ai) 기준으로 조회합니다. (페이징, 권한 부서 필터, 공고 필터)"""
     page = max(1, page)
     size = max(1, min(size, 200))
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         q = _apply_filters(session.query(ResumeFile), dept_id, analysis_status,
                            recommendation, keyword, date_from, date_to, allowed_dept_ids,
@@ -149,7 +150,8 @@ def get_status_list(dept_id=None, analysis_status=None, recommendation=None,
         return {"status": "OK", "source": "db", "page": page, "size": size,
                 "total": total, "items": items}
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def _latest_analysis(session, resume_file_id):
@@ -163,12 +165,12 @@ def _latest_analysis(session, resume_file_id):
     )
 
 
-def get_file_for_download(resume_file_id: int) -> dict:
+def get_file_for_download(resume_file_id: int, session=None) -> dict:
     """
     원본 파일 다운로드 API 용 최소 메타를 조회합니다. 파일 없으면 None.
     반환: id, dept_id, drive_file_id, original_file_name, stored_file_name, content_type.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         f = session.query(ResumeFile).filter(ResumeFile.id == resume_file_id).first()
         if not f:
@@ -182,12 +184,13 @@ def get_file_for_download(resume_file_id: int) -> dict:
             "content_type": f.content_type,
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_status_detail(resume_file_id: int) -> dict:
+def get_status_detail(resume_file_id: int, session=None) -> dict:
     """이력서 파일 1건의 상세 + 업로드 회차 + 최신 분석 결과를 조회합니다. 파일 없으면 None."""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         f = session.query(ResumeFile).filter(ResumeFile.id == resume_file_id).first()
         if not f:
@@ -264,14 +267,16 @@ def get_status_detail(resume_file_id: int) -> dict:
         return {"status": "OK", "source": "db", "resume_file": resume_file,
                 "upload_batch": upload_batch, "analysis_result": analysis_result}
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def get_status_export_rows(dept_id=None, analysis_status=None, recommendation=None,
                            keyword=None, date_from=None, date_to=None,
-                           allowed_dept_ids=None, posting_id=None, posting_keyword=None) -> list:
+                           allowed_dept_ids=None, posting_id=None, posting_keyword=None,
+                           session=None) -> list:
     """엑셀용: 필터 조건 전체(페이징 없음) 행을 분석 결과까지 합쳐 반환합니다. (권한 부서/공고 필터)"""
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         q = _apply_filters(session.query(ResumeFile), dept_id, analysis_status,
                            recommendation, keyword, date_from, date_to, allowed_dept_ids,
@@ -324,4 +329,5 @@ def get_status_export_rows(dept_id=None, analysis_status=None, recommendation=No
             })
         return rows
     finally:
-        session.close()
+        if _own:
+            session.close()

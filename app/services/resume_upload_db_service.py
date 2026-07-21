@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.db.session import SessionLocal
+from app.db.session import resolve_session
 from app.db.models.resume_upload_batch import ResumeUploadBatch
 from app.db.models.resume_file import ResumeFile
 
@@ -22,7 +22,7 @@ _BATCH_UPSERT_COLS = [
 
 
 def save_upload(meta: dict, uploaded_files: list, uploaded_count: int,
-                skipped_count: int, upload_status: str) -> dict:
+                skipped_count: int, upload_status: str, session=None) -> dict:
     """
     업로드 회차(resume_upload_batches) 1건 + 파일(resume_files) N건을 한 트랜잭션으로 저장합니다.
     - upload_id 기준 batch upsert
@@ -30,7 +30,7 @@ def save_upload(meta: dict, uploaded_files: list, uploaded_count: int,
     - 둘 중 하나라도 실패하면 rollback. 반환: {"resume_upload_batches": 1, "resume_files": N}
     """
     now = datetime.now()
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         batch_row = {
             "upload_id": meta["upload_id"],
@@ -96,7 +96,8 @@ def save_upload(meta: dict, uploaded_files: list, uploaded_count: int,
         session.rollback()
         raise
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
 def _file_to_dict(f: ResumeFile) -> dict:
@@ -160,14 +161,14 @@ def _group_pending_uploads(session, files: list, default_dept_id=None) -> list:
     return uploads
 
 
-def get_pending_uploads_from_db(dept_id: str) -> dict:
+def get_pending_uploads_from_db(dept_id: str, session=None) -> dict:
     """
     선택 부서의 '분석 대기 파일'을 **DB** 에서 조회합니다.
     (JSON 기반 get_pending_uploads 와 이름이 겹치지 않도록 _from_db 접미사를 붙입니다.)
     조건: resume_files.dept_id=dept_id AND file_status=UPLOADED AND analysis_status=PENDING.
     회차(batch)별로 묶어 batch.created_at 내림차순으로 반환합니다.
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         files = (
             session.query(ResumeFile)
@@ -189,10 +190,11 @@ def get_pending_uploads_from_db(dept_id: str) -> dict:
             "dept_name": dept_name, "pending_count": len(files), "uploads": uploads,
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_pending_uploads_for_scope(allowed_dept_ids=None) -> dict:
+def get_pending_uploads_for_scope(allowed_dept_ids=None, session=None) -> dict:
     """
     권한 범위 전체의 '분석 대기 파일'을 **DB** 에서 조회합니다. ('전체 부서' 버튼용)
     - allowed_dept_ids=None  : 제한 없음 (ADMIN — 전사 전체)
@@ -201,7 +203,7 @@ def get_pending_uploads_for_scope(allowed_dept_ids=None) -> dict:
     반환 구조는 get_pending_uploads_from_db 와 동일(uploads[].files[]). 여러 부서가 섞일 수 있어
     top-level dept_id/dept_name 은 비웁니다. (각 upload 가 자체 dept_id/dept_name 보유)
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         q = session.query(ResumeFile).filter(
             ResumeFile.file_status == "UPLOADED",
@@ -220,15 +222,16 @@ def get_pending_uploads_for_scope(allowed_dept_ids=None) -> dict:
             "dept_name": None, "pending_count": len(files), "uploads": uploads,
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
 
 
-def get_pending_debug(dept_id: str) -> dict:
+def get_pending_debug(dept_id: str, session=None) -> dict:
     """
     디버그용: 부서의 batch/파일 저장 현황과 pending 조건에 걸리는 파일 수를 빠르게 확인합니다.
     (API 문제와 프론트 문제를 분리하기 위함. resume_ai 만 조회)
     """
-    session = SessionLocal()
+    session, _own = resolve_session(session)
     try:
         batches = (
             session.query(ResumeUploadBatch)
@@ -278,4 +281,5 @@ def get_pending_debug(dept_id: str) -> dict:
             ],
         }
     finally:
-        session.close()
+        if _own:
+            session.close()
